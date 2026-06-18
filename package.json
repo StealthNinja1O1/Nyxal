@@ -1,0 +1,40 @@
+{
+  "name": "nyxal",
+  "version": "0.1.0",
+  "description": "Nyxal — dashboard + multi-bot runtime for character-driven Discord LLM bots",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,magenta \"bun --watch server/index.ts\" \"vite --config web/vite.config.ts\"",
+    "dev:server": "bun --watch server/index.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    "build": "vite build --config web/vite.config.ts",
+    "start": "cross-env NODE_ENV=production bun server/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "bun server/db/migrate.ts",
+    "db:studio": "drizzle-kit studio",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "bun": ">=1.1"
+  },
+  "dependencies": {
+    "@elysiajs/static": "^1.3.0",
+    "drizzle-orm": "^0.40.0",
+    "elysia": "^1.2.0"
+  },
+  "devDependencies": {
+    "@formisch/preact": "^0.2.0",
+    "@preact/preset-vite": "^2.9.3",
+    "@preact/signals": "^2.0.0",
+    "@types/bun": "^1.2.0",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "drizzle-kit": "^0.30.0",
+    "lucide-react": "^0.469.0",
+    "preact": "^10.25.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "wouter": "^3.3.0"
+  }
+}

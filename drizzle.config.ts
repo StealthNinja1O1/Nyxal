@@ -1,0 +1,12 @@
+import { defineConfig } from "drizzle-kit";
+
+export default defineConfig({
+  schema: "./server/db/schema.ts",
+  out: "./server/db/migrations",
+  dialect: "sqlite",
+  dbCredentials: {
+    url: process.env.NYXAL_DB_PATH || "./data/nyxal.db",
+  },
+  verbose: true,
+  strict: true,
+});

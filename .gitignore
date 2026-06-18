@@ -127,10 +127,20 @@ dist
 
 # Stores VSCode versions used for testing VSCode extensions
 .vscode-test
-
+# ── Nyxal ──
+/node_modules/
+/.env
+/data/
+/web/dist/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 # yarn v2
 .yarn/cache
 .yarn/unplugged
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+/oldCode/
