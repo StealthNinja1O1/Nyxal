@@ -1,6 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
-import { Bot as BotIcon, Plus, Play, Square, Pencil, Trash2, RefreshCw, Info } from "lucide-react";
-import { Link } from "wouter";
+import { Bot as BotIcon, Plus, Play, Square, RefreshCw, Pencil, Trash2, Info, ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { Link, useLocation } from "wouter";
 import {
   bots,
   botsLoading,
@@ -20,13 +20,57 @@ import { Callout } from "../components/Callout";
 import { ModelPicker } from "../components/ModelPicker";
 import { StatusBadge } from "../components/StatusBadge";
 import { LoadingState, EmptyState } from "../components/State";
-import type { BotCreateInput } from "../api/bots-types";
+import type { Bot, BotCreateInput, BotStatus } from "../api/bots-types";
+
+type SortKey = "name" | "status" | "model" | "provider" | "created";
+type SortDir = "asc" | "desc";
 
 export function BotsListRoute() {
   useEffect(() => {
     void loadBots();
     void loadProviders();
   }, []);
+
+  const [sortKey, setSortKey] = useState<SortKey>("created");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  // resolve provider id -> name for display. fall back to id or "(none)".
+  const providerName = (id: string | null): string => {
+    if (!id) return "(none)";
+    const p = providers.value.find((x) => x.id === id);
+    return p?.name ?? id.slice(0, 8);
+  };
+
+  function toggleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir(key === "created" ? "desc" : "asc");
+    }
+  }
+
+  const sorted = [...bots.value].sort((a, b) => {
+    let cmp = 0;
+    switch (sortKey) {
+      case "name":
+        cmp = a.name.localeCompare(b.name);
+        break;
+      case "status":
+        cmp = statusRank(a.status) - statusRank(b.status);
+        break;
+      case "model":
+        cmp = (a.llmModel || "").localeCompare(b.llmModel || "");
+        break;
+      case "provider":
+        cmp = providerName(a.llmProviderId).localeCompare(providerName(b.llmProviderId));
+        break;
+      case "created":
+        cmp = a.createdAt - b.createdAt;
+        break;
+    }
+    return sortDir === "asc" ? cmp : -cmp;
+  });
 
   return (
     <section>
@@ -48,17 +92,181 @@ export function BotsListRoute() {
             action={<CreateButton label="Create your first bot" />}
           />
         ) : (
-          <div style={{ padding: "16px" }}>
-            <div class="bot-grid">
-              {bots.value.map((b) => (
-                <BotCard key={b.id} bot={b} />
-              ))}
-            </div>
+          <div style={{ overflowX: "auto" }}>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <SortableTh label="Name" k="name" cur={sortKey} dir={sortDir} onClick={toggleSort} />
+                  <SortableTh label="Status" k="status" cur={sortKey} dir={sortDir} onClick={toggleSort} />
+                  <SortableTh label="Model" k="model" cur={sortKey} dir={sortDir} onClick={toggleSort} />
+                  <SortableTh label="Provider" k="provider" cur={sortKey} dir={sortDir} onClick={toggleSort} />
+                  <SortableTh label="Created" k="created" cur={sortKey} dir={sortDir} onClick={toggleSort} />
+                  <th class="col-actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((b) => (
+                  <BotRow key={b.id} bot={b} providerName={providerName(b.llmProviderId)} />
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
     </section>
   );
+}
+
+// online > starting > error > stopped > disabled, for a sensible default sort
+function statusRank(s: BotStatus): number {
+  switch (s) {
+    case "online":
+      return 0;
+    case "starting":
+      return 1;
+    case "error":
+      return 2;
+    case "stopped":
+      return 3;
+    case "disabled":
+      return 4;
+  }
+}
+
+function SortableTh({
+  label,
+  k,
+  cur,
+  dir,
+  onClick,
+}: {
+  label: string;
+  k: SortKey;
+  cur: SortKey;
+  dir: SortDir;
+  onClick: (k: SortKey) => void;
+}) {
+  const sorted = cur === k;
+  return (
+    <th class={`sortable ${sorted ? "sorted" : ""}`} onClick={() => onClick(k)}>
+      {label}
+      <span class="sort-ind">
+        {sorted ? (
+          dir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+        ) : (
+          <ArrowUpDown size={12} />
+        )}
+      </span>
+    </th>
+  );
+}
+
+function BotRow({ bot, providerName }: { bot: Bot; providerName: string }) {
+  const [confirmDel, setConfirmDel] = useState(false);
+  const running = bot.status === "online" || bot.status === "starting";
+  const [, navigate] = useLocation();
+
+  // row click navigates to detail. action buttons stopPropagation so they
+  // don't trigger the navigation.
+  function stopNav(e: Event) {
+    e.stopPropagation();
+  }
+
+  return (
+    <>
+      <tr class={bot.status === "error" ? "is-error" : ""} onClick={() => navigate(`/bots/${bot.id}`)}>
+        <td>
+          <Link href={`/bots/${bot.id}`} class="muted-link" onClick={stopNav}>
+            <strong>{bot.name}</strong>
+          </Link>
+        </td>
+        <td>
+          <StatusBadge status={bot.status} detail={bot.detail} />
+        </td>
+        <td class="col-mono">{bot.llmModel || "no model"}</td>
+        <td class="col-mono">{providerName}</td>
+        <td class="col-mono">{fmtDate(bot.createdAt)}</td>
+        <td class="col-actions" onClick={stopNav}>
+          <div class="row-actions">
+            {running ? (
+              <button
+                class="row-action-btn"
+                title="Stop"
+                onClick={(e) => {
+                  stopNav(e);
+                  void stopBot(bot.id);
+                }}
+              >
+                <Square size={14} />
+              </button>
+            ) : (
+              <button
+                class="row-action-btn accent"
+                title="Start"
+                onClick={async (e) => {
+                  stopNav(e);
+                  if (await startBot(bot.id)) pollStatus(bot.id);
+                }}
+              >
+                <Play size={14} />
+              </button>
+            )}
+            <button
+              class="row-action-btn"
+              title="Restart"
+              disabled={!running}
+              onClick={async (e) => {
+                stopNav(e);
+                if (await restartBot(bot.id)) pollStatus(bot.id);
+              }}
+            >
+              <RefreshCw size={14} />
+            </button>
+            <Link href={`/bots/${bot.id}`} class="row-action-btn" title="Edit">
+              <Pencil size={14} />
+            </Link>
+            <button class="row-action-btn danger" title="Delete" onClick={(e) => { stopNav(e); setConfirmDel(true); }}>
+              <Trash2 size={14} />
+            </button>
+          </div>
+        </td>
+      </tr>
+
+      {confirmDel && (
+        <Modal
+          open
+          title={`Delete "${bot.name}"?`}
+          onClose={() => setConfirmDel(false)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setConfirmDel(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={async () => {
+                  if (await deleteBot(bot.id)) setConfirmDel(false);
+                }}
+              >
+                <Trash2 size={15} />
+                Delete
+              </Button>
+            </>
+          }
+        >
+          <p>
+            This stops the bot if it's running and deletes its config, character, memory, and metadata.
+            Cannot be undone.
+          </p>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+function fmtDate(ms: number): string {
+  const d = new Date(ms);
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 function CreateButton({ label = "New bot" }: { label?: string }) {
@@ -193,97 +401,4 @@ function CreateModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function BotCard({ bot }: { bot: (typeof bots.value)[number] }) {
-  const [confirmDel, setConfirmDel] = useState(false);
-  const running = bot.status === "online" || bot.status === "starting";
 
-  return (
-    <div class="bot-card">
-      <div class="bot-card-header">
-        <div style={{ minWidth: 0 }}>
-          <h3 class="bot-card-name">
-            <Link href={`/bots/${bot.id}`} class="muted-link">
-              {bot.name}
-            </Link>
-          </h3>
-          <div class="bot-card-meta">
-            {bot.llmModel || "no model"} - {bot.discordTokenMasked || "no token"}
-          </div>
-        </div>
-        <StatusBadge status={bot.status} detail={bot.detail} />
-      </div>
-
-      {bot.detail && bot.status === "error" && (
-        <div class="list-row-error">{bot.detail}</div>
-      )}
-
-      <div class="bot-card-actions">
-        {running ? (
-          <Button variant="subtle" size="sm" onClick={() => void stopBot(bot.id)}>
-            <Square size={14} />
-            Stop
-          </Button>
-        ) : (
-          <Button
-            variant="subtle"
-            size="sm"
-            onClick={async () => {
-              if (await startBot(bot.id)) pollStatus(bot.id);
-            }}
-          >
-            <Play size={14} />
-            Start
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={async () => {
-            if (await restartBot(bot.id)) pollStatus(bot.id);
-          }}
-          disabled={!running}
-          aria-label="Restart"
-        >
-          <RefreshCw size={14} />
-        </Button>
-        <Link href={`/bots/${bot.id}`}>
-          <Button variant="ghost" size="sm" aria-label="Edit">
-            <Pencil size={14} />
-          </Button>
-        </Link>
-        <Button variant="danger" size="sm" onClick={() => setConfirmDel(true)} aria-label="Delete">
-          <Trash2 size={14} />
-        </Button>
-      </div>
-
-      {confirmDel && (
-        <Modal
-          open
-          title={`Delete "${bot.name}"?`}
-          onClose={() => setConfirmDel(false)}
-          footer={
-            <>
-              <Button variant="ghost" onClick={() => setConfirmDel(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={async () => {
-                  if (await deleteBot(bot.id)) setConfirmDel(false);
-                }}
-              >
-                <Trash2 size={15} />
-                Delete
-              </Button>
-            </>
-          }
-        >
-          <p>
-            This stops the bot if it's running and deletes its config, character, memory, and metadata.
-            Cannot be undone.
-          </p>
-        </Modal>
-      )}
-    </div>
-  );
-}

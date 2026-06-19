@@ -181,3 +181,21 @@ export const logs = sqliteTable("logs", {
   meta: text("meta", { mode: "json" }).$type<Record<string, unknown>>(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+// tool_call_log, every bot function/tool invocation (instant, async, recursive commands)
+export const toolCallLog = sqliteTable("tool_call_log", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  botId: text("bot_id")
+    .notNull()
+    .references(() => bots.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  kind: text("kind").notNull(), // instant | async | recursive
+  args: text("args", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  success: integer("success", { mode: "boolean" }).notNull().default(true),
+  errorMessage: text("error_message"), // set when success = false
+  ms: integer("ms").notNull().default(0),
+  depth: integer("depth").notNull().default(0), // 0 = top-level, > 0 = nested recursion
+  channelId: text("channel_id"),
+  messageId: text("message_id"), // the discord message that triggered the call (if known)
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});

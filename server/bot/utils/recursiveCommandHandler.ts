@@ -11,6 +11,7 @@ import { splitCommands, type CommandContext } from "./botCommandHandler";
 import type { CommandMetadataStore } from "../stores/commandMetadataStore";
 import type { ResponseContext } from "./ResponseContexts";
 import type { Logger } from "./logger";
+import { logToolCall } from "../toolCallLogger";
 
 export interface RecursiveCommandResult {
   reply: string;
@@ -92,7 +93,18 @@ export async function processRecursiveCommands(options: ProcessRecursiveOptions)
     const toolResultParts: string[] = [];
     for (const cmd of recursiveCmds) {
       try {
-        const resultText = await executeRecursiveCommand(registry, log, cmd, execCtx);
+        const resultText = await logToolCall(
+          cmd.name,
+          "recursive",
+          cmd.args as Record<string, unknown>,
+          {
+            botId: execCtx?.botId ?? commandCtx.execCtx.botId,
+            channelId: channelId ?? null,
+            messageId: commandCtx.message?.id ?? null,
+            depth,
+          },
+          () => executeRecursiveCommand(registry, log, cmd, execCtx),
+        );
         toolResultParts.push(resultText);
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);

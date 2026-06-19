@@ -1,11 +1,24 @@
-// live log viewer. ws-connected: history restored on connect, new lines pushed
-// live, level filter applied both client-side (instant) and server-side (saves
-// bandwidth). auto-scrolls to the bottom on new lines unless the user scrolled up.
+// live log viewer with infinite backfill.
+//
+// - ws-connected: history restored on connect, new lines pushed live.
+// - infinite scroll upward: when the user scrolls near the top, older rows
+//   are fetched from /api/logs (cursor-paged by id) and prepended.
+// - filters: level toggles, scope/bot dropdown, free-text search. all apply
+//   to both the live stream and the backfilled history.
+// - autoscroll to bottom on new lines unless the user scrolled up.
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Filter, ArrowDownToLine, Trash2 } from "lucide-react";
+import { Filter, ArrowDownToLine, Trash2, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { connectWs, recentLogs, setLogLevels, wsConnected, logLevels, type LogLevel } from "../lib/ws";
 import { Button } from "../components/Button";
+import {
+  historyLogs,
+  loadingMore,
+  hasMore,
+  loadMoreLogs,
+  resetHistory,
+} from "../state/logs";
+import { bots, loadBots } from "../state/bots";
 
 const LEVEL_TONE: Record<LogLevel, string> = {
   DEBUG: "log-level-debug",
@@ -18,29 +31,57 @@ const ALL_LEVELS: LogLevel[] = ["DEBUG", "INFO", "WARN", "ERROR"];
 
 export function LogsRoute() {
   const [search, setSearch] = useState("");
+  const [scopeFilter, setScopeFilter] = useState<string>("");
+  const [showFilters, setShowFilters] = useState(false);
   const [autoscroll, setAutoscroll] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     connectWs();
+    if (bots.value.length === 0) void loadBots();
   }, []);
 
-  // autoscroll to the bottom when new lines arrive (if enabled)
+  // autoscroll to the bottom when new lines arrive (if enabled).
   useEffect(() => {
     if (!autoscroll) return;
     const el = containerRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [recentLogs.value, autoscroll]);
 
+  const prevScrollHeight = useRef<number | null>(null);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || prevScrollHeight.current == null) return;
+    const delta = el.scrollHeight - prevScrollHeight.current;
+    el.scrollTop += delta;
+    prevScrollHeight.current = null;
+  }, [historyLogs.value]);
+
+  // infinite scroll: trigger a backfill when the user is within almsot at top
+  function onScroll() {
+    const el = containerRef.current;
+    if (!el) return;
+    if (el.scrollTop < 200 && !loadingMore.value && hasMore.value) {
+      prevScrollHeight.current = el.scrollHeight;
+      void loadMoreLogs();
+    }
+  }
+
+  const combined = useMemo(() => {
+    return [...historyLogs.value, ...recentLogs.value];
+  }, [historyLogs.value, recentLogs.value]);
+
   const visibleLogs = useMemo(() => {
     const levels = new Set(logLevels.value);
     const q = search.trim().toLowerCase();
-    return recentLogs.value.filter((l) => {
+    return combined.filter((l) => {
       if (!levels.has(l.level)) return false;
+      if (scopeFilter === "__system__" && l.scope !== "system") return false;
+      if (scopeFilter && scopeFilter !== "__system__" && l.scope !== scopeFilter && l.scope !== `bot:${scopeFilter}`) return false;
       if (q && !l.message.toLowerCase().includes(q) && !l.scope.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [recentLogs.value, logLevels.value, search]);
+  }, [combined, logLevels.value, search, scopeFilter]);
 
   function toggleLevel(level: LogLevel) {
     const set = new Set(logLevels.value);
@@ -50,8 +91,13 @@ export function LogsRoute() {
   }
 
   function clearView() {
-    // local-only clear (the ws keeps streaming new lines after)
     recentLogs.value = [];
+    resetHistory();
+  }
+
+  function jumpToNow() {
+    const el = containerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }
 
   return (
@@ -70,6 +116,13 @@ export function LogsRoute() {
               {lvl}
             </button>
           ))}
+          <button
+            class={`log-level-toggle ${showFilters ? "active" : ""}`}
+            onClick={() => setShowFilters((v) => !v)}
+            title="More filters"
+          >
+            More {showFilters ? <ChevronUp size={11} style={{ verticalAlign: "middle" }} /> : <ChevronDown size={11} style={{ verticalAlign: "middle" }} />}
+          </button>
         </div>
 
         <input
@@ -94,6 +147,9 @@ export function LogsRoute() {
             <ArrowDownToLine size={14} />
             {autoscroll ? "Auto" : "Manual"}
           </Button>
+          <Button variant="ghost" size="sm" onClick={jumpToNow} title="Jump to latest">
+            Now
+          </Button>
           <Button variant="ghost" size="sm" onClick={clearView}>
             <Trash2 size={14} />
             Clear view
@@ -101,7 +157,41 @@ export function LogsRoute() {
         </div>
       </div>
 
-      <div class="logs-container" ref={containerRef}>
+      {showFilters && (
+        <div class="logs-toolbar" style={{ paddingTop: 8, paddingBottom: 8 }}>
+          <div class="field" style={{ marginBottom: 0, minWidth: 240 }}>
+            <label class="field-label" for="scope-filter">Scope / bot</label>
+            <select
+              id="scope-filter"
+              class="field-input"
+              value={scopeFilter}
+              onChange={(e) => setScopeFilter((e.target as HTMLSelectElement).value)}
+            >
+              <option value="">(all scopes)</option>
+              <option value="__system__">system</option>
+              {bots.value.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <span class="field-hint" style={{ alignSelf: "flex-end", paddingBottom: 4 }}>
+            Showing {visibleLogs.length} of {combined.length} loaded rows.
+          </span>
+        </div>
+      )}
+
+      <div class="logs-container" ref={containerRef} onScroll={onScroll}>
+        {loadingMore.value && (
+          <div class="logs-load-more">
+            <Loader2 size={14} class="spin" />
+            Loading older logs...
+          </div>
+        )}
+        {!loadingMore.value && !hasMore.value && combined.length > 0 && (
+          <div class="logs-load-more">Reached the beginning of the log.</div>
+        )}
         {visibleLogs.length === 0 ? (
           <div class="logs-empty">
             <p>No log lines match the current filter.</p>

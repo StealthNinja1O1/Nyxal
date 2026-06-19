@@ -44,9 +44,12 @@ export interface Bot {
   statusCfg: BotStatusConfig;
   comfyui: ComfyUiConfig;
   websearch: WebSearchConfig;
+  comfyuiWorkflowId: string | null;
   createdAt: number;
   updatedAt: number;
 }
+
+export interface BotCreateInput {
   name: string;
   discordToken: string;
   llmProviderId?: string;

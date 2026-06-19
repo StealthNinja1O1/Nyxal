@@ -1,6 +1,6 @@
 import { Route, Switch, Link, Router, useLocation } from "wouter";
 import { useEffect } from "preact/hooks";
-import { LayoutDashboard, Bot, KeyRound, Settings, Menu, X, Workflow, ScrollText } from "lucide-react";
+import { LayoutDashboard, Bot, KeyRound, Settings, Menu, X, Workflow, ScrollText, Github, Wrench } from "lucide-react";
 import { signal } from "@preact/signals";
 import { ToastHost } from "./components/ToastHost";
 import { ProvidersRoute } from "./routes/providers";
@@ -10,6 +10,8 @@ import { WorkflowsRoute } from "./routes/workflows";
 import { WorkflowDetailRoute } from "./routes/workflow-detail";
 import { OverviewRoute } from "./routes/overview";
 import { LogsRoute } from "./routes/logs";
+import { ToolCallsRoute } from "./routes/tool-calls";
+import { SettingsRoute } from "./routes/settings";
 
 const sidebarOpen = signal(false);
 
@@ -17,6 +19,7 @@ const NAV: { path: string; label: string; icon: typeof Bot; match: (p: string) =
   { path: "/", label: "Overview", icon: LayoutDashboard, match: (p) => p === "/" },
   { path: "/bots", label: "Bots", icon: Bot, match: (p) => p.startsWith("/bots") },
   { path: "/logs", label: "Logs", icon: ScrollText, match: (p) => p.startsWith("/logs") },
+  { path: "/tool-calls", label: "Tool calls", icon: Wrench, match: (p) => p.startsWith("/tool-calls") },
   { path: "/providers", label: "LLM Providers", icon: KeyRound, match: (p) => p.startsWith("/providers") },
   { path: "/workflows", label: "Workflows", icon: Workflow, match: (p) => p.startsWith("/workflows") },
   { path: "/settings", label: "Settings", icon: Settings, match: (p) => p.startsWith("/settings") },
@@ -49,12 +52,11 @@ function AppInner() {
             <Route path="/bots" component={BotsListRoute} />
             <Route path="/bots/:id" component={BotDetailRoute} />
             <Route path="/logs" component={LogsRoute} />
+            <Route path="/tool-calls" component={ToolCallsRoute} />
             <Route path="/providers">{() => <ProvidersRoute />}</Route>
             <Route path="/workflows" component={WorkflowsRoute} />
             <Route path="/workflows/:id" component={WorkflowDetailRoute} />
-            <Route path="/settings">
-              <Placeholder title="Settings" subtitle="Global settings + log retention, soon:tm:" />
-            </Route>
+            <Route path="/settings" component={SettingsRoute} />
             <Route>
               <Placeholder title="Not found" subtitle="That route doesn't exist yet." />
             </Route>
@@ -99,6 +101,18 @@ function Topbar({ location }: { location: string }) {
         {sidebarOpen.value ? <X size={20} /> : <Menu size={20} />}
       </button>
       <h1 class="topbar-title">{current?.label ?? "Nyxal"}</h1>
+      <div class="topbar-right">
+        <a
+          class="topbar-link"
+          href="https://github.com/StealthNinja1O1/Nyxal"
+          target="_blank"
+          rel="noreferrer"
+          title="Nyxal on GitHub"
+          aria-label="Nyxal on GitHub"
+        >
+          <Github size={18} />
+        </a>
+      </div>
     </header>
   );
 }

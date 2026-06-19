@@ -11,8 +11,7 @@ import { db } from "../../db";
 import { logs } from "../../db/schema";
 import { asc, desc, inArray, sql } from "drizzle-orm";
 import type { LogLevel } from "../utils/logger";
-
-const HISTORY_LIMIT = Number(process.env.NYXAL_LOG_HISTORY || 500);
+import { getSettingNumber } from "../../http/routes/settingsCache";
 
 export interface LogEvent {
   type: "log";
@@ -78,11 +77,13 @@ export async function handleWsMessage(ws: WsServerLike, raw: unknown): Promise<v
 
 // client asked for history on connect
 export async function sendLogHistory(ws: WsServerLike, levels?: LogLevel[]): Promise<void> {
+  // history limit is read live from settings so a settings change takes effect for the next client connect without a restart.
+  const historyLimit = getSettingNumber("log_history", 500);
   const rows = await db
     .select()
     .from(logs)
     .orderBy(desc(logs.id))
-    .limit(HISTORY_LIMIT);
+    .limit(historyLimit);
   const events = rows
     .reverse()
     .filter((r) => (levels ? levels.includes(r.level as LogLevel) : true))

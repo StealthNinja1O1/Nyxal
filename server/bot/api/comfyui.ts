@@ -23,14 +23,53 @@ export async function generateImage(
   workflowTemplate: Record<string, unknown> | null = null,
 ): Promise<GenerateImageResult> {
   const baseUrl = config.baseUrl.replace(/\/+$/, "");
-  const workflow = loadAndPrepareWorkflow(config, log, prompt, orientation, workflowTemplate);
+  const { workflow, seed } = loadAndPrepareWorkflow(config, log, prompt, orientation, workflowTemplate);
   const promptId = await submitPrompt(baseUrl, workflow);
   log.info(`ComfyUI: Job ${promptId} submitted, waiting for completion...`);
   const output = await pollForCompletion(config, log, baseUrl, promptId);
   let buffer = await downloadImage(baseUrl, output);
   if (config.stripMetadata) buffer = stripPngTextChunks(buffer);
+  if (seed != null) buffer = embedPngTextChunk(buffer, "seed", String(seed));
   log.info(`ComfyUI: Image ready (${(buffer.length / 1024).toFixed(0)}KB)`);
   return { buffer, filename: output.filename };
+}
+
+/** append a tEXt chunk (keyword + null + text, latin-1) right before IEND. used
+ *  to re-embed the random seed after stripping the comfyui prompt/workflow. */
+function embedPngTextChunk(png: Buffer, keyword: string, text: string): Buffer {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  if (png.length < 8 || !png.subarray(0, 8).equals(signature)) return png;
+
+  // build the chunk data: "keyword\0text"
+  const data = Buffer.alloc(keyword.length + 1 + text.length, 0);
+  data.write(keyword, 0, "latin1");
+  data.write(text, keyword.length + 1, "latin1");
+
+  const chunk = Buffer.alloc(12 + data.length);
+  chunk.writeUInt32BE(data.length, 0); // length
+  chunk.write("tEXt", 4, "ascii"); // type
+  data.copy(chunk, 8); // data
+  chunk.writeUInt32BE(crc32(Buffer.concat([Buffer.from("tEXt", "ascii"), data])), 8 + data.length); // crc
+
+  // split at IEND (last 12 bytes: length=0, "IEND", crc) and insert before it
+  const iend = png.subarray(png.length - 12);
+  return Buffer.concat([png.subarray(0, png.length - 12), chunk, iend]);
+}
+
+// crc32 for png chunks. standard polynomial, table-driven.
+const CRC_TABLE: Uint32Array = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+function crc32(buf: Buffer): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]!) & 0xff]! ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
 }
 
 function stripPngTextChunks(png: Buffer): Buffer {
@@ -56,7 +95,7 @@ function loadAndPrepareWorkflow(
   prompt: string,
   orientation: Orientation,
   workflowTemplate: Record<string, unknown> | null,
-): Record<string, WorkflowNode> {
+): { workflow: Record<string, WorkflowNode>; seed: number | null } {
   if (!workflowTemplate || typeof workflowTemplate !== "object") {
     throw new Error("No comfyui workflow assigned to this bot. Assign one in the ComfyUI tab.");
   }
@@ -92,7 +131,8 @@ function loadAndPrepareWorkflow(
     throw new Error('No <PROMPT> placeholder found in workflow. Add a node with an input value of exactly "<PROMPT>".');
   if (seedsReplaced > 0) log.debug(`ComfyUI: Randomized ${seedsReplaced} seed(s) to ${randomSeed}`);
   if (!resolutionReplaced) log.warn("ComfyUI: No node with width/height inputs found, resolution not overridden");
-  return cloned;
+  // only return the seed when we actually randomized or null so the caller knows there's nothing to embed.
+  return { workflow: cloned, seed: seedsReplaced > 0 ? randomSeed : null };
 }
 
 async function submitPrompt(baseUrl: string, workflow: Record<string, WorkflowNode>): Promise<string> {

@@ -7,6 +7,7 @@ const DEFAULTS: Record<string, string> = {
   log_retention_days: process.env.NYXAL_LOG_RETENTION_DAYS || "30",
   log_history: process.env.NYXAL_LOG_HISTORY || "500",
   log_level_default: "INFO",
+  tool_log_retention_days: "365",
 };
 
 /**

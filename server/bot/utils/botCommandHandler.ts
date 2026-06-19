@@ -1,11 +1,15 @@
 // instant + async command dispatch. thin layer over the per-bot registry.
 // recursive commands are handled separately (recursiveCommandHandler) since
 // they re-prompt the llm with tool results.
+//
+// every dispatch wraps def.execute() in logToolCall() so each invocation
+// (react / generateImage / etc) lands in tool_call_log with args + outcome.
 
 import type { Message } from "discord.js";
 import type { BotCommand, ChatMemoryBook, RuntimeCharacter } from "../types";
 import type { CommandRegistry, CommandResult, AsyncCommandResult, CommandExecutionContext } from "../commands";
 import type { Logger } from "./logger";
+import { logToolCall } from "../toolCallLogger";
 
 export type CommandContext = {
   message: Message | null;
@@ -42,7 +46,17 @@ export async function executeInstantCommands(
       continue;
     }
     try {
-      const result = (await def.execute(cmd.args as Record<string, unknown>, context.execCtx)) as CommandResult;
+      const result = await logToolCall(
+        cmd.name,
+        "instant",
+        cmd.args as Record<string, unknown>,
+        {
+          botId: context.execCtx.botId,
+          channelId: context.message?.channelId ?? null,
+          messageId: context.message?.id ?? null,
+        },
+        () => def.execute(cmd.args as Record<string, unknown>, context.execCtx) as Promise<CommandResult>,
+      );
       results.push(result);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -67,7 +81,17 @@ export async function executeAsyncCommands(
       continue;
     }
     try {
-      const result = (await def.execute(cmd.args as Record<string, unknown>, context.execCtx)) as AsyncCommandResult;
+      const result = await logToolCall(
+        cmd.name,
+        "async",
+        cmd.args as Record<string, unknown>,
+        {
+          botId: context.execCtx.botId,
+          channelId: context.message?.channelId ?? null,
+          messageId: context.message?.id ?? null,
+        },
+        () => def.execute(cmd.args as Record<string, unknown>, context.execCtx) as Promise<AsyncCommandResult>,
+      );
       results.push(result);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);

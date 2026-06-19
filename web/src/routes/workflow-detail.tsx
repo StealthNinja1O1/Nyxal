@@ -115,13 +115,14 @@ export function WorkflowDetailRoute() {
   }
 
   async function saveContent() {
+    if (!id) return;
     setSavingContent(true);
     await updateWorkflowContent(id, content);
     setSavingContent(false);
   }
 
   async function saveMeta() {
-    if (!workflow) return;
+    if (!workflow || !id) return;
     await updateWorkflowMeta(id, { name, description });
     setWorkflow({ ...workflow, name, description });
   }

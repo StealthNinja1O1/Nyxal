@@ -85,12 +85,12 @@ function scheduleReconnect(): void {
 function handleMessage(ev: { type: string } & Record<string, unknown>): void {
   switch (ev.type) {
     case "log.history": {
-      const rows = (ev as { logs: LogRow[] }).logs;
+      const rows = (ev as unknown as { logs: LogRow[] }).logs;
       recentLogs.value = rows.slice(-MAX_LOGS_IN_MEMORY);
       break;
     }
     case "log": {
-      const row = (ev as { log: LogRow }).log;
+      const row = (ev as unknown as { log: LogRow }).log;
       batch(() => {
         const next = [...recentLogs.value, row];
         if (next.length > MAX_LOGS_IN_MEMORY) next.splice(0, next.length - MAX_LOGS_IN_MEMORY);
