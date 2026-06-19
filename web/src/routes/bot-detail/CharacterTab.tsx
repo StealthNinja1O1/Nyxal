@@ -1,0 +1,168 @@
+import { useEffect, useState } from "preact/hooks";
+import { Save, FileText } from "lucide-react";
+import { botsApi } from "../../api/bots";
+import type { Character } from "../../api/bots-types";
+import { Button } from "../../components/Button";
+import { Field } from "../../components/Field";
+import { TextArea } from "../../components/TextArea";
+import { LoadingState } from "../../components/State";
+import { ImportButton } from "../../components/ImportButton";
+import { toast } from "../../state/toast";
+import { parseCharacterCard, tryParseJson } from "../../lib/importers";
+
+export function CharacterTab({ botId }: { botId: string }) {
+  const [char, setChar] = useState<Character | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  // local editable copies
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [mesExample, setMesExample] = useState("");
+  const [depthPromptText, setDepthPromptText] = useState("");
+  const [depthPromptDepth, setDepthPromptDepth] = useState(2);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const c = await botsApi.getCharacter(botId);
+        setChar(c);
+        setName(c.name);
+        setDescription(c.description);
+        setMesExample(c.mesExample);
+        setDepthPromptText(c.depthPrompt?.prompt ?? "");
+        setDepthPromptDepth(c.depthPrompt?.depth ?? 2);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [botId]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const depthPrompt =
+        depthPromptText.trim().length > 0
+          ? { depth: depthPromptDepth, prompt: depthPromptText.trim(), role: "user" as const }
+          : null;
+      const updated = await botsApi.updateCharacter(botId, {
+        name,
+        description,
+        mesExample,
+        depthPrompt,
+      });
+      setChar(updated);
+      toast.show("Character saved", "success");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function importCard(text: string, filename: string) {
+    try {
+      const parsed = parseCharacterCard(text);
+      if (!parsed.name && !parsed.description && !parsed.mesExample && !parsed.depthPrompt) {
+        throw new Error("No character fields found in this file.");
+      }
+      // post the whole parsed card as-is; the server does the digging
+      const check = tryParseJson(text);
+      if (!check.ok) throw new Error("Invalid JSON");
+      const res = await fetch(`/api/bots/${botId}/character/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "replace", card: check.value }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as { character: Character };
+      setChar(data.character);
+      setName(data.character.name);
+      setDescription(data.character.description);
+      setMesExample(data.character.mesExample);
+      setDepthPromptText(data.character.depthPrompt?.prompt ?? "");
+      setDepthPromptDepth(data.character.depthPrompt?.depth ?? 2);
+      toast.show(`Imported "${data.character.name}" from ${filename}`, "success");
+    } catch (err) {
+      toast.show(`Import failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }
+
+  if (loading) return <LoadingState label="Loading character..." />;
+  if (!char) return <p>Character not found.</p>;
+
+  return (
+    <div>
+      <div class="editor-toolbar">
+        <p class="field-hint" style={{ margin: 0 }}>
+          <FileText size={13} style={{ verticalAlign: "middle", marginRight: 4 }} />
+          Character edits apply live to a running bot. No restart needed.
+        </p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <ImportButton label="Import character.json" onFile={importCard} />
+          <Button onClick={save} loading={saving} disabled={saving}>
+            <Save size={15} />
+            Save character
+          </Button>
+        </div>
+      </div>
+
+      <Field
+        label="Name"
+        name="name"
+        value={name}
+        onInput={(e) => setName((e.target as HTMLInputElement).value)}
+        hint="The character's display name. Also matches as a trigger keyword in chat."
+      />
+
+      <TextArea
+        label="Description"
+        name="description"
+        value={description}
+        onInput={(e) => setDescription((e.target as HTMLTextAreaElement).value)}
+        rows={12}
+        hint="The main character definition. Markdown ok. This becomes the system prompt's core lore."
+      />
+
+      <TextArea
+        label="Message examples"
+        name="mesExample"
+        value={mesExample}
+        onInput={(e) => setMesExample((e.target as HTMLTextAreaElement).value)}
+        rows={6}
+        mono
+        hint="Example dialogue for the character to mimic. Optional."
+      />
+
+      <div class="setting-group">
+        <div class="setting-group-title">Depth prompt</div>
+        <div class="setting-row-grid">
+          <Field
+            label="Depth"
+            name="depth"
+            type="number"
+            min={0}
+            max={20}
+            value={String(depthPromptDepth)}
+            onInput={(e) => setDepthPromptDepth(Number((e.target as HTMLInputElement).value) || 0)}
+            hint="Inserted N messages from the end of history."
+          />
+          <div class="field" style={{ marginBottom: 0 }}>
+            <span class="field-label">Prompt</span>
+            <span class="field-hint">High-priority instruction injected at that depth. Leave blank to disable.</span>
+          </div>
+        </div>
+        <TextArea
+          label="Prompt text"
+          name="depthPrompt"
+          value={depthPromptText}
+          onInput={(e) => setDepthPromptText((e.target as HTMLTextAreaElement).value)}
+          rows={3}
+          mono
+          placeholder="[Use the react command when you think of a fitting emoji.]"
+        />
+      </div>
+    </div>
+  );
+}

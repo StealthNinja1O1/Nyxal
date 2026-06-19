@@ -55,7 +55,24 @@ export interface ComfyUiConfig {
     portrait: [number, number];
     landscape: [number, number];
   };
-  workflow: Record<string, unknown> | null;
+}
+
+/** A ComfyUI workflow node (minimal shape for the text editor). */
+export interface ComfyWorkflowNode {
+  inputs?: Record<string, unknown>;
+  class_type?: string;
+  _meta?: { title?: string };
+  [key: string]: unknown;
+}
+
+/** The shared comfyui_workflows row. */
+export interface ComfyWorkflow {
+  id: string;
+  name: string;
+  description: string;
+  content: Record<string, ComfyWorkflowNode>;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /** Web search (Miyami/searxng) */

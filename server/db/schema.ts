@@ -32,6 +32,18 @@ export const llmProviders = sqliteTable("llm_providers", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+// comfyui_workflows - shared workflow templates (like llm_providers).
+// the workflow JSON lives in `content` (map of node id -> node). text nodes
+// containing <PROMPT> get replaced at gen time. bots reference one via FK.
+export const comfyuiWorkflows = sqliteTable("comfyui_workflows", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  content: text("content", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 // bots, old config.toml
 export const bots = sqliteTable("bots", {
   id: text("id").primaryKey(),
@@ -52,6 +64,9 @@ export const bots = sqliteTable("bots", {
   visionProviderId: text("vision_provider_id").references(() => llmProviders.id),
   visionModel: text("vision_model"),
   enableVision: integer("enable_vision", { mode: "boolean" }).notNull().default(false),
+
+  // comfyui workflow (shared resource, resolved via FK). nullable = none assigned.
+  comfyuiWorkflowId: text("comfyui_workflow_id").references(() => comfyuiWorkflows.id),
 
   // behavior / context (all hot-reloadable)
   randomResponseRate: integer("random_response_rate").notNull().default(50),

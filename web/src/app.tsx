@@ -1,16 +1,24 @@
 import { Route, Switch, Link, Router, useLocation } from "wouter";
 import { useEffect } from "preact/hooks";
-import { LayoutDashboard, Bot, KeyRound, Settings, Menu, X } from "lucide-react";
+import { LayoutDashboard, Bot, KeyRound, Settings, Menu, X, Workflow, ScrollText } from "lucide-react";
 import { signal } from "@preact/signals";
 import { ToastHost } from "./components/ToastHost";
 import { ProvidersRoute } from "./routes/providers";
+import { BotsListRoute } from "./routes/bots-list";
+import { BotDetailRoute } from "./routes/bot-detail";
+import { WorkflowsRoute } from "./routes/workflows";
+import { WorkflowDetailRoute } from "./routes/workflow-detail";
+import { OverviewRoute } from "./routes/overview";
+import { LogsRoute } from "./routes/logs";
 
 const sidebarOpen = signal(false);
 
 const NAV: { path: string; label: string; icon: typeof Bot; match: (p: string) => boolean }[] = [
   { path: "/", label: "Overview", icon: LayoutDashboard, match: (p) => p === "/" },
   { path: "/bots", label: "Bots", icon: Bot, match: (p) => p.startsWith("/bots") },
+  { path: "/logs", label: "Logs", icon: ScrollText, match: (p) => p.startsWith("/logs") },
   { path: "/providers", label: "LLM Providers", icon: KeyRound, match: (p) => p.startsWith("/providers") },
+  { path: "/workflows", label: "Workflows", icon: Workflow, match: (p) => p.startsWith("/workflows") },
   { path: "/settings", label: "Settings", icon: Settings, match: (p) => p.startsWith("/settings") },
 ];
 
@@ -37,13 +45,13 @@ function AppInner() {
         <Topbar location={location} />
         <div class="content">
           <Switch>
-            <Route path="/">
-              <Placeholder title="Overview" subtitle="Bot status cards + live token feed, todo" />
-            </Route>
-            <Route path="/bots">
-              <Placeholder title="Bots" subtitle="Bot CRUD + character/behavior editors, todo." />
-            </Route>
+            <Route path="/" component={OverviewRoute} />
+            <Route path="/bots" component={BotsListRoute} />
+            <Route path="/bots/:id" component={BotDetailRoute} />
+            <Route path="/logs" component={LogsRoute} />
             <Route path="/providers">{() => <ProvidersRoute />}</Route>
+            <Route path="/workflows" component={WorkflowsRoute} />
+            <Route path="/workflows/:id" component={WorkflowDetailRoute} />
             <Route path="/settings">
               <Placeholder title="Settings" subtitle="Global settings + log retention, soon:tm:" />
             </Route>
