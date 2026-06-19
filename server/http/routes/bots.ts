@@ -11,11 +11,15 @@
 
 import { Elysia, t } from "elysia";
 import { db } from "../../db";
-import { bots, characters } from "../../db/schema";
-import { eq } from "drizzle-orm";
+import { bots, characters, mcpServers, mcpTools } from "../../db/schema";
+import { eq, inArray } from "drizzle-orm";
 import { botManager } from "../../bot/BotManager";
-import { newBotDefaults, ensureCharacter } from "../../config/resolveBotConfig";
+import { newBotDefaults, ensureCharacter, resolveBotConfig } from "../../config/resolveBotConfig";
+import { BUILTIN_COMMANDS } from "../../bot/commands";
 import { newId, nowMs } from "../../db/ids";
+import type { ToolOverride } from "../../../shared/types";
+
+type ToolOverrideShape = ToolOverride;
 
 function maskToken(token: string): string {
   if (!token || token.length <= 8) return token ? "•".repeat(token.length) : "";
@@ -51,8 +55,6 @@ function botRowToPublic(row: typeof bots.$inferSelect) {
     addTimestamps: row.addTimestamps,
     addNothink: row.addNothink,
     enableUserStatus: row.enableUserStatus,
-    allowRenaming: row.allowRenaming,
-    allowLorebookEditing: row.allowLorebookEditing,
     minResponseIntervalSeconds: row.minResponseIntervalSeconds,
     maxRecursionDepth: row.maxRecursionDepth,
     logLevel: row.logLevel,
@@ -60,6 +62,8 @@ function botRowToPublic(row: typeof bots.$inferSelect) {
     comfyui: row.comfyui,
     websearch: row.websearch,
     comfyuiWorkflowId: row.comfyuiWorkflowId,
+    toolOverrides: row.toolOverrides ?? {},
+    mcpServerIds: row.mcpServerIds ?? [],
     createdAt: row.createdAt.getTime(),
     updatedAt: row.updatedAt.getTime(),
   };
@@ -136,9 +140,9 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
         "temperature", "visionProviderId", "visionModel", "enableVision",
         "randomResponseRate", "maxHistoryMessages", "maxContextTokens",
         "ignoreOtherBots", "replyToMentions", "addTimestamps", "addNothink",
-        "enableUserStatus", "allowRenaming", "allowLorebookEditing",
-        "minResponseIntervalSeconds", "maxRecursionDepth", "logLevel",
+        "enableUserStatus", "minResponseIntervalSeconds", "maxRecursionDepth", "logLevel",
         "status", "comfyui", "websearch", "comfyuiWorkflowId",
+        "toolOverrides", "mcpServerIds",
       ] as const;
       for (const k of keys) {
         if (body[k] !== undefined) (patch as Record<string, unknown>)[k] = body[k];
@@ -194,14 +198,14 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
         addTimestamps: t.Optional(t.Boolean()),
         addNothink: t.Optional(t.Boolean()),
         enableUserStatus: t.Optional(t.Boolean()),
-        allowRenaming: t.Optional(t.Boolean()),
-        allowLorebookEditing: t.Optional(t.Boolean()),
         minResponseIntervalSeconds: t.Optional(t.Integer()),
         maxRecursionDepth: t.Optional(t.Integer()),
         status: t.Optional(t.Record(t.String(), t.Unknown())),
         comfyui: t.Optional(t.Record(t.String(), t.Unknown())),
         websearch: t.Optional(t.Record(t.String(), t.Unknown())),
         comfyuiWorkflowId: t.Optional(t.Union([t.String(), t.Null()])),
+        toolOverrides: t.Optional(t.Record(t.String(), t.Record(t.String(), t.Unknown()))),
+        mcpServerIds: t.Optional(t.Array(t.String())),
         logLevel: t.Optional(t.String()),
       }),
     },
@@ -219,6 +223,11 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
   })
 
   .post("/:id/start", async ({ params, set }) => {
+    // persist enabled=true so the bot auto-starts on next process boot.
+    await db
+      .update(bots)
+      .set({ enabled: true, updatedAt: new Date(nowMs()) })
+      .where(eq(bots.id, params.id));
     const ok = await botManager.start(params.id);
     if (!ok) {
       set.status = 400;
@@ -227,6 +236,11 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
     return { ok: true, status: botManager.getStatus(params.id)?.status };
   })
   .post("/:id/stop", async ({ params }) => {
+    // persist enabled=false so the bot stays stopped on next boot.
+    await db
+      .update(bots)
+      .set({ enabled: false, updatedAt: new Date(nowMs()) })
+      .where(eq(bots.id, params.id));
     await botManager.stop(params.id);
     return { ok: true, status: botManager.getStatus(params.id)?.status };
   })
@@ -247,6 +261,7 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
       name: char.name,
       description: char.description,
       mesExample: char.mesExample,
+      systemPrompt: char.systemPrompt,
       depthPrompt: char.depthPrompt,
       updatedAt: char.updatedAt.getTime(),
     };
@@ -265,6 +280,10 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
           ...(body.name !== undefined && { name: body.name }),
           ...(body.description !== undefined && { description: body.description }),
           ...(body.mesExample !== undefined && { mesExample: body.mesExample }),
+          ...(body.systemPrompt !== undefined && {
+            // empty string = reset to default (store as null)
+            systemPrompt: body.systemPrompt.trim() === "" ? null : body.systemPrompt,
+          }),
           ...(body.depthPrompt !== undefined && { depthPrompt: body.depthPrompt }),
           updatedAt: new Date(nowMs()),
         })
@@ -280,6 +299,7 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
         name: updated!.name,
         description: updated!.description,
         mesExample: updated!.mesExample,
+        systemPrompt: updated!.systemPrompt,
         depthPrompt: updated!.depthPrompt,
         updatedAt: updated!.updatedAt.getTime(),
       };
@@ -289,6 +309,7 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
         name: t.Optional(t.String()),
         description: t.Optional(t.String()),
         mesExample: t.Optional(t.String()),
+        systemPrompt: t.Optional(t.String()),
         depthPrompt: t.Optional(
           t.Union([
             t.Null(),
@@ -356,6 +377,7 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
           name: updated!.name,
           description: updated!.description,
           mesExample: updated!.mesExample,
+          systemPrompt: updated!.systemPrompt,
           depthPrompt: updated!.depthPrompt,
           updatedAt: updated!.updatedAt.getTime(),
         },
@@ -368,4 +390,85 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
         card: t.Record(t.String(), t.Unknown()),
       }),
     },
-  );
+  )
+
+  // structured tool list for the bot-detail Tools tab. returns builtins
+  // (with computed default + override state) + all MCP servers (with enabled
+  // flag for this bot) + tools for each enabled server.
+  .get("/:id/tools", async ({ params, set }) => {
+    const [row] = await db.select().from(bots).where(eq(bots.id, params.id));
+    if (!row) {
+      set.status = 404;
+      return { error: "Bot not found" };
+    }
+    const config = await resolveBotConfig(row);
+    const overrides = config.toolOverrides;
+
+    const builtin = BUILTIN_COMMANDS.map((c) => {
+      const cat = c.kind === "async" ? "comfyui" : c.name === "webSearch" || c.name === "fetchWebpage" || c.name === "searchAndFetch" || c.name === "deepResearch" || c.name === "crawlSite" ? "websearch" : "builtin";
+      const def = c.defaultEnabled(config);
+      const ov = overrides[c.name];
+      return {
+        name: c.name,
+        kind: c.kind,
+        category: cat,
+        args: c.args,
+        description: c.description,
+        defaultEnabled: def,
+        effectiveEnabled: ov?.enabled !== undefined ? ov.enabled : def,
+        override: ov,
+      };
+    });
+
+    // all servers, with `enabled` for this bot + their tool list
+    const allServers = await db.select().from(mcpServers).orderBy(mcpServers.name);
+    const enabledIds = new Set(config.mcpServerIds);
+    // query ALL tools for ALL servers so toolCount is accurate even for
+    // not-yet-enabled ones (so the user sees "22 tools" before toggling on).
+    const allServerIds = allServers.map((s) => s.id);
+    const toolRows = allServerIds.length
+      ? await db.select().from(mcpTools).where(inArray(mcpTools.serverId, allServerIds))
+      : [];
+
+    const mcpServersOut = allServers.map((s) => ({
+      id: s.id,
+      name: s.name,
+      url: s.url,
+      enabled: enabledIds.has(s.id),
+      lastFetchedAt: s.lastFetchedAt?.getTime() ?? null,
+      lastFetchError: s.lastFetchError,
+      toolCount: toolRows.filter((t) => t.serverId === s.id).length,
+    }));
+
+    // group MCP tools by serverId for ALL servers (enabled or not). the UI
+    // toggles a server on locally before saving, so it needs the tool list
+    // up front to render immediately without a reload.
+    const mcpToolsByServer: Record<string, Array<{
+      name: string;
+      description: string;
+      defaultEnabled: boolean;
+      effectiveEnabled: boolean;
+      override: ToolOverrideShape | undefined;
+    }>> = {};
+    for (const s of allServers) {
+      const tools = toolRows
+        .filter((t) => t.serverId === s.id)
+        .map((t) => {
+          // mirror mcpCommands.mcpCommandName sanitization exactly so
+          // override keys match between this endpoint and the live registry.
+          const sanitized = s.name.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40) || "server";
+          const cmdName = `mcp__${sanitized}__${t.name}`;
+          const ov = overrides[cmdName];
+          return {
+            name: cmdName,
+            description: t.description || "(no description)",
+            defaultEnabled: true,
+            effectiveEnabled: ov?.enabled !== undefined ? ov.enabled : true,
+            override: ov,
+          };
+        });
+      mcpToolsByServer[s.id] = tools;
+    }
+
+    return { builtin, mcpServers: mcpServersOut, mcpToolsByServer };
+  });

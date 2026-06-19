@@ -10,11 +10,12 @@
  *
  * New tables: llm_providers, llm_call_log, logs, settings.
  */
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, primaryKey } from "drizzle-orm/sqlite-core";
 import type {
   BotStatusConfig,
   ComfyUiConfig,
   WebSearchConfig,
+  ToolOverrides,
 } from "../../shared/types";
 
 export const settings = sqliteTable("settings", {
@@ -77,8 +78,6 @@ export const bots = sqliteTable("bots", {
   addTimestamps: integer("add_timestamps", { mode: "boolean" }).notNull().default(true),
   addNothink: integer("add_nothink", { mode: "boolean" }).notNull().default(false),
   enableUserStatus: integer("enable_user_status", { mode: "boolean" }).notNull().default(false),
-  allowRenaming: integer("allow_renaming", { mode: "boolean" }).notNull().default(false),
-  allowLorebookEditing: integer("allow_lorebook_editing", { mode: "boolean" }).notNull().default(false),
   minResponseIntervalSeconds: integer("min_response_interval_seconds").notNull().default(0),
   maxRecursionDepth: integer("max_recursion_depth").notNull().default(2),
   logLevel: text("log_level").notNull().default("INFO"),
@@ -88,9 +87,43 @@ export const bots = sqliteTable("bots", {
   comfyui: text("comfyui", { mode: "json" }).$type<ComfyUiConfig>().notNull(),
   websearch: text("websearch", { mode: "json" }).$type<WebSearchConfig>().notNull(),
 
+  toolOverrides: text("tool_overrides", { mode: "json" }).$type<ToolOverrides>().notNull().default({}),
+  mcpServerIds: text("mcp_server_ids", { mode: "json" }).$type<string[]>().notNull().default([]),
+
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+// MCP servers (HTTP transport only). tools are discovered via listTools
+// and cached in mcp_tools
+export const mcpServers = sqliteTable("mcp_servers", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  url: text("url").notNull(),
+  headers: text("headers", { mode: "json" }).$type<Record<string, string>>().notNull().default({}),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  lastFetchedAt: integer("last_fetched_at", { mode: "timestamp_ms" }),
+  lastFetchError: text("last_fetch_error"),
+});
+
+// MCP tool definitions discovered from a server. composite pk so refetch
+// can just delete-all-then-insert without collisions.
+export const mcpTools = sqliteTable(
+  "mcp_tools",
+  {
+    serverId: text("server_id")
+      .notNull()
+      .references(() => mcpServers.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    inputSchema: text("input_schema", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.serverId, t.name] }),
+  }),
+);
 
 
 // characters, only the fields the bot reads, not full V2 standard anymore
@@ -103,6 +136,7 @@ export const characters = sqliteTable("characters", {
   name: text("name").notNull(),
   description: text("description").notNull(),
   mesExample: text("mes_example").notNull().default(""),
+  systemPrompt: text("system_prompt"),
   depthPrompt: text("depth_prompt", { mode: "json" }).$type<{
     depth: number;
     prompt: string;

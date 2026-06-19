@@ -102,12 +102,9 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
       {/* comfyui connection + image gen */}
       <div class="setting-group">
         <div class="setting-group-title">ComfyUI server</div>
-        <Toggle
-          label="Enable image generation"
-          hint="Lets the bot use the generateImage command."
-          checked={comfyui.enabled}
-          onChange={(v) => setComfy("enabled", v)}
-        />
+        <p class="field-hint" style={{ marginTop: 0, marginBottom: 10 }}>
+          Image generation enables automatically when a base URL and a workflow are set. Toggle it per-tool on the Tools tab.
+        </p>
         <Field
           label="ComfyUI base URL"
           name="comfyBaseUrl"
@@ -162,12 +159,9 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
       {/* websearch */}
       <div class="setting-group">
         <div class="setting-group-title">Web search (Miyami API)</div>
-        <Toggle
-          label="Enable web search tools"
-          hint="Enables webSearch, fetchWebpage, searchAndFetch, deepResearch, crawlSite commands."
-          checked={websearch.enabled}
-          onChange={(v) => setSearch("enabled", v)}
-        />
+        <p class="field-hint" style={{ marginTop: 0, marginBottom: 10 }}>
+          Web search tools enable automatically when a base URL is set. Toggle each one per-tool on the Tools tab.
+        </p>
         <Field
           label="Miyami base URL"
           name="searchBaseUrl"
@@ -213,21 +207,6 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
           <Button onClick={saveSearch} loading={saving === "websearch"}>
             <Save size={15} /> Save Web search
           </Button>
-        </div>
-      </div>
-
-      {/* MCP servers - placeholder for the future. the tab is structured so
-          MCP can slot in alongside comfyui + websearch without a restructure. */}
-      <div class="setting-group">
-        <div class="setting-group-title">MCP servers</div>
-        <div class="ext-placeholder">
-          <Plug size={20} style={{ marginBottom: 6, opacity: 0.6 }} />
-          <div>
-            <strong>Model Context Protocol</strong> support is coming.
-          </div>
-          <div style={{ marginTop: 4 }}>
-            Hook up external tool servers (filesystem, browser, databases) and expose their tools to the bot.
-          </div>
         </div>
       </div>
     </div>

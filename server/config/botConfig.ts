@@ -2,7 +2,12 @@
 // resolved from a DB bot row + provider rows at boot, then hot-reloaded
 // in place by the BotManager / config store.
 
-import type { BotStatusConfig, ComfyUiConfig, WebSearchConfig } from "../../shared/types";
+import type {
+  BotStatusConfig,
+  ComfyUiConfig,
+  WebSearchConfig,
+  ToolOverrides,
+} from "../../shared/types";
 
 export interface BotRuntimeConfig {
   botId: string;
@@ -37,8 +42,6 @@ export interface BotRuntimeConfig {
   addTimestamps: boolean;
   addNothink: boolean;
   enableUserStatus: boolean;
-  allowRenaming: boolean;
-  allowLorebookEditing: boolean;
   minResponseIntervalSeconds: number;
   maxRecursionDepth: number;
   logLevel: string;
@@ -46,6 +49,9 @@ export interface BotRuntimeConfig {
   status: BotStatusConfig;
   comfyui: ComfyUiConfig;
   websearch: WebSearchConfig;
+
+  toolOverrides: ToolOverrides;
+  mcpServerIds: string[];
 
   // assigned comfyui workflow id (nullable = none assigned).
   comfyuiWorkflowId: string | null;
@@ -64,7 +70,6 @@ export const DEFAULT_STATUS: BotStatusConfig = {
 };
 
 export const DEFAULT_COMFYUI: ComfyUiConfig = {
-  enabled: false,
   baseUrl: "",
   timeoutSeconds: 120,
   pollIntervalMs: 2000,
@@ -79,7 +84,6 @@ export const DEFAULT_COMFYUI: ComfyUiConfig = {
 };
 
 export const DEFAULT_WEBSEARCH: WebSearchConfig = {
-  enabled: false,
   baseUrl: "https://websearch.miyami.tech",
   language: "auto",
   maxResults: 5,

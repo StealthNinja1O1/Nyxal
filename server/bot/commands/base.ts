@@ -33,16 +33,14 @@ export const reactCommand: CommandDef<{ emoji: string }> = {
   description:
     "React to the previous message with the specified emoji. Use official Discord emojis or custom ones from the server (format: emojiName:emojiId).",
   kind: "instant",
-  enabled: () => true,
+  defaultEnabled: () => true,
   execute: async (args, ctx) => react(args as { emoji: string }, ctx.message),
 };
 
 export async function renameSelf(
   args: { newName: string },
   message: Message | null,
-  allowRenaming: boolean,
 ): Promise<CommandResult> {
-  if (!allowRenaming) return { success: false, message: "Renaming is disabled" };
   const { newName } = args;
   if (!newName || typeof newName !== "string") return { success: false, message: "Invalid newName argument" };
   if (!message?.guild) return { success: false, message: "Cannot rename outside of a server" };
@@ -59,9 +57,7 @@ export async function renameSelf(
 export async function renameUser(
   args: { userId: string; newName: string },
   message: Message | null,
-  allowRenaming: boolean,
 ): Promise<CommandResult> {
-  if (!allowRenaming) return { success: false, message: "Renaming is disabled" };
   const { userId, newName } = args;
   if (!userId || typeof userId !== "string") return { success: false, message: "Invalid userId argument" };
   if (!newName || typeof newName !== "string") return { success: false, message: "Invalid newName argument" };
@@ -90,7 +86,6 @@ export async function setBio(
   message: Message | null,
   config: CommandExecutionContext["config"],
 ): Promise<CommandResult> {
-  if (!config.allowRenaming) return { success: false, message: "Profile editing is disabled" };
   const { bio } = args;
   if (!bio || typeof bio !== "string") return { success: false, message: "Invalid bio argument" };
   if (bio.length > 190) return { success: false, message: `Bio is too long (${bio.length}/190 characters)` };
@@ -117,8 +112,8 @@ export const renameSelfCommand: CommandDef<{ newName: string }> = {
   args: { newName: "string" },
   description: "Change {{char}}'s nickname in the server to the specified newName.",
   kind: "instant",
-  enabled: (config) => config.allowRenaming,
-  execute: async (args, ctx) => renameSelf(args as { newName: string }, ctx.message, ctx.config.allowRenaming),
+  defaultEnabled: () => true,
+  execute: async (args, ctx) => renameSelf(args as { newName: string }, ctx.message),
 };
 
 export const renameUserCommand: CommandDef<{ userId: string; newName: string }> = {
@@ -126,9 +121,9 @@ export const renameUserCommand: CommandDef<{ userId: string; newName: string }> 
   args: { userId: "string", newName: "string" },
   description: "Change the nickname of the specified user in the server to newName.",
   kind: "instant",
-  enabled: (config) => config.allowRenaming,
+  defaultEnabled: () => true,
   execute: async (args, ctx) =>
-    renameUser(args as { userId: string; newName: string }, ctx.message, ctx.config.allowRenaming),
+    renameUser(args as { userId: string; newName: string }, ctx.message),
 };
 
 export const setBioCommand: CommandDef<{ bio: string }> = {
@@ -136,7 +131,7 @@ export const setBioCommand: CommandDef<{ bio: string }> = {
   args: { bio: "string (max 190 characters)" },
   description: `Set {{char}}'s about me / bio text on their server profile`,
   kind: "instant",
-  enabled: (config) => config.allowRenaming,
+  defaultEnabled: () => true,
   execute: async (args, ctx) => setBio(args as { bio: string }, ctx.message, ctx.config),
 };
 
@@ -166,7 +161,7 @@ export const postStickerCommand: CommandDef<{ stickerName: string }> = {
   args: { stickerName: "string" },
   description: "Send a sticker from the server. Use the exact sticker name from the available stickers list.",
   kind: "instant",
-  enabled: () => true,
+  defaultEnabled: () => true,
   execute: async (args, ctx) => postSticker(args as { stickerName: string }, ctx.message),
 };
 
@@ -182,14 +177,13 @@ export const editOrAddToLorebookCommand: CommandDef<{
       You can also add entries but please only update entries that you can see the value of.
       Keywords are what trigger the entry to be included in context, so use them wisely, its smart to add userid, username and displayname, along with possible nicknames or descriptive keywords.`,
   kind: "instant",
-  enabled: (config) => config.allowLorebookEditing,
+  defaultEnabled: () => true,
   execute: async (args, ctx) => {
     const { entryName, keywords, content } = args as { entryName: string; keywords: string[]; content: string };
     if (!entryName || typeof entryName !== "string") return { success: false, message: "Invalid entryName argument" };
     if (!keywords || !Array.isArray(keywords))
       return { success: false, message: "Invalid keywords argument (must be array)" };
     if (!content || typeof content !== "string") return { success: false, message: "Invalid content argument" };
-    if (!ctx.config.allowLorebookEditing) return { success: false, message: "Lorebook editing is disabled" };
 
     try {
       const isExisting = ctx.chatMemoryBook.entries.some(

@@ -57,6 +57,7 @@ export async function loadCharacter(botId: string): Promise<RuntimeCharacter> {
     mesExample: char?.mesExample ?? "",
     depthPrompt: char?.depthPrompt ?? null,
     character_book: book,
+    systemPrompt: char?.systemPrompt ?? null,
   };
 }
 

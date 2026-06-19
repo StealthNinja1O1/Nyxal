@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { Save, FileText } from "lucide-react";
+import { Save, FileText, RotateCcw } from "lucide-react";
 import { botsApi } from "../../api/bots";
 import type { Character } from "../../api/bots-types";
 import { Button } from "../../components/Button";
@@ -19,6 +19,7 @@ export function CharacterTab({ botId }: { botId: string }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [mesExample, setMesExample] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState("");
   const [depthPromptText, setDepthPromptText] = useState("");
   const [depthPromptDepth, setDepthPromptDepth] = useState(2);
 
@@ -30,6 +31,7 @@ export function CharacterTab({ botId }: { botId: string }) {
         setName(c.name);
         setDescription(c.description);
         setMesExample(c.mesExample);
+        setSystemPrompt(c.systemPrompt ?? "");
         setDepthPromptText(c.depthPrompt?.prompt ?? "");
         setDepthPromptDepth(c.depthPrompt?.depth ?? 2);
       } finally {
@@ -49,10 +51,24 @@ export function CharacterTab({ botId }: { botId: string }) {
         name,
         description,
         mesExample,
+        systemPrompt,
         depthPrompt,
       });
       setChar(updated);
+      setSystemPrompt(updated.systemPrompt ?? "");
       toast.show("Character saved", "success");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function resetSystemPrompt() {
+    setSaving(true);
+    try {
+      const updated = await botsApi.updateCharacter(botId, { systemPrompt: "" });
+      setChar(updated);
+      setSystemPrompt("");
+      toast.show("System prompt reset to default", "info");
     } finally {
       setSaving(false);
     }
@@ -80,8 +96,7 @@ export function CharacterTab({ botId }: { botId: string }) {
       setChar(data.character);
       setName(data.character.name);
       setDescription(data.character.description);
-      setMesExample(data.character.mesExample);
-      setDepthPromptText(data.character.depthPrompt?.prompt ?? "");
+      setMesExample(data.character.mesExample);        setSystemPrompt(data.character.systemPrompt ?? "");      setDepthPromptText(data.character.depthPrompt?.prompt ?? "");
       setDepthPromptDepth(data.character.depthPrompt?.depth ?? 2);
       toast.show(`Imported "${data.character.name}" from ${filename}`, "success");
     } catch (err) {
@@ -134,6 +149,32 @@ export function CharacterTab({ botId }: { botId: string }) {
         mono
         hint="Example dialogue for the character to mimic. Optional."
       />
+
+      {/* system prompt override */}
+      <div class="setting-group">
+        <div class="setting-group-title">System prompt (optional)</div>
+        <p class="field-hint" style={{ marginTop: 0, marginBottom: 10 }}>
+          Override the built-in prompt template for this character. Leave blank to use the default.
+          Tokens like{" "}
+          <code>{`{{user}}`}</code>, <code>{`{{char}}`}</code>, <code>{`{{description}}`}</code>,{" "}
+          <code>{`{{availableCommands}}`}</code>, <code>{`{{lorebookEntries}}`}</code> are replaced at runtime.
+        </p>
+        <TextArea
+          label="System prompt"
+          name="systemPrompt"
+          value={systemPrompt}
+          onInput={(e) => setSystemPrompt((e.target as HTMLTextAreaElement).value)}
+          rows={14}
+          mono
+          placeholder="(using the built-in default template)"
+        />
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+          <Button variant="ghost" size="sm" onClick={resetSystemPrompt} disabled={saving || !systemPrompt}>
+            <RotateCcw size={12} />
+            Reset to default
+          </Button>
+        </div>
+      </div>
 
       <div class="setting-group">
         <div class="setting-group-title">Depth prompt</div>

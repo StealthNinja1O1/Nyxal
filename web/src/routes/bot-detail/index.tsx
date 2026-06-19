@@ -9,8 +9,9 @@ import { CharacterTab } from "./CharacterTab";
 import { BehaviorTab } from "./BehaviorTab";
 import { LorebookTab } from "./LorebookTab";
 import { ExtensionsTab } from "./ExtensionsTab";
+import { ToolsTab } from "./ToolsTab";
 
-type Tab = "character" | "behavior" | "lorebook" | "memory" | "extensions";
+type Tab = "character" | "behavior" | "lorebook" | "memory" | "extensions" | "tools";
 
 export function BotDetailRoute() {
   const [match, params] = useRoute("/bots/:id");
@@ -105,6 +106,9 @@ export function BotDetailRoute() {
         <button class={`tab ${tab === "memory" ? "active" : ""}`} onClick={() => setTab("memory")}>
           Memory
         </button>
+        <button class={`tab ${tab === "tools" ? "active" : ""}`} onClick={() => setTab("tools")}>
+          Tools
+        </button>
         <button class={`tab ${tab === "extensions" ? "active" : ""}`} onClick={() => setTab("extensions")}>
           Extensions
         </button>
@@ -114,6 +118,7 @@ export function BotDetailRoute() {
       {tab === "behavior" && <BehaviorTab bot={bot} />}
       {tab === "lorebook" && <LorebookTab botId={botId} book="static" />}
       {tab === "memory" && <LorebookTab botId={botId} book="memory" />}
+      {tab === "tools" && <ToolsTab botId={botId} />}
       {tab === "extensions" && <ExtensionsTab bot={bot} />}
     </section>
   );

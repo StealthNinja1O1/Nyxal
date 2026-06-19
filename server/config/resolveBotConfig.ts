@@ -59,8 +59,6 @@ export async function resolveBotConfig(botRow: typeof bots.$inferSelect): Promis
     addTimestamps: botRow.addTimestamps,
     addNothink: botRow.addNothink,
     enableUserStatus: botRow.enableUserStatus,
-    allowRenaming: botRow.allowRenaming,
-    allowLorebookEditing: botRow.allowLorebookEditing,
     minResponseIntervalSeconds: botRow.minResponseIntervalSeconds,
     maxRecursionDepth: botRow.maxRecursionDepth,
     logLevel: botRow.logLevel,
@@ -70,6 +68,9 @@ export async function resolveBotConfig(botRow: typeof bots.$inferSelect): Promis
     comfyuiWorkflowId: botRow.comfyuiWorkflowId,
     comfyuiWorkflow: workflow?.content ?? null,
     websearch: (botRow.websearch ?? DEFAULT_WEBSEARCH) as WebSearchConfig,
+
+    toolOverrides: botRow.toolOverrides ?? {},
+    mcpServerIds: botRow.mcpServerIds ?? [],
   };
 }
 
@@ -95,14 +96,14 @@ export function newBotDefaults() {
     addTimestamps: true,
     addNothink: false,
     enableUserStatus: false,
-    allowRenaming: false,
-    allowLorebookEditing: false,
     minResponseIntervalSeconds: 0,
     maxRecursionDepth: 2,
     logLevel: "INFO",
     status: DEFAULT_STATUS,
     comfyui: DEFAULT_COMFYUI,
     websearch: DEFAULT_WEBSEARCH,
+    toolOverrides: {},
+    mcpServerIds: [],
   };
 }
 

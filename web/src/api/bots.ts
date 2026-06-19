@@ -20,4 +20,36 @@ export const botsApi = {
   getCharacter: (id: string) => http.get<Character>(`/bots/${id}/character`),
   updateCharacter: (id: string, patch: CharacterPatch) =>
     http.put<Character>(`/bots/${id}/character`, patch),
+  getTools: (id: string) =>
+    http.get<{
+      builtin: Array<{
+        name: string;
+        kind: "instant" | "async" | "recursive";
+        category: "builtin" | "websearch" | "comfyui" | "mcp";
+        args: Record<string, unknown>;
+        description: string;
+        defaultEnabled: boolean;
+        effectiveEnabled: boolean;
+        override?: { enabled?: boolean; description?: string };
+      }>;
+      mcpServers: Array<{
+        id: string;
+        name: string;
+        url: string;
+        enabled: boolean;
+        lastFetchedAt: number | null;
+        lastFetchError: string | null;
+        toolCount: number;
+      }>;
+      mcpToolsByServer: Record<
+        string,
+        Array<{
+          name: string;
+          description: string;
+          defaultEnabled: boolean;
+          effectiveEnabled: boolean;
+          override?: { enabled?: boolean; description?: string };
+        }>
+      >;
+    }>(`/bots/${id}/tools`),
 };

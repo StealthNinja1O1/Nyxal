@@ -8,6 +8,7 @@ import { workflowsRoutes } from "./http/routes/workflows";
 import { statsRoutes } from "./http/routes/stats";
 import { settingsRoutes } from "./http/routes/settings";
 import { toolCallRoutes } from "./http/routes/toolCalls";
+import { mcpRoutes } from "./http/routes/mcp";
 import { refreshSettingsCache } from "./http/routes/settingsCache";
 import { wsRoutes } from "./http/routes/ws";
 import { botManager } from "./bot/BotManager";
@@ -27,6 +28,7 @@ const app = new Elysia()
   .use(statsRoutes)
   .use(settingsRoutes)
   .use(toolCallRoutes)
+  .use(mcpRoutes)
   .use(wsRoutes)
   .get("/api/health", () => ({ ok: true, ts: Date.now() }))
   .listen(PORT, async ({ port }) => {

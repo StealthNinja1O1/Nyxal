@@ -178,6 +178,29 @@ class BotManager {
     return this.applyConfig(botId);
   }
 
+  /**
+   * Force a running bot to re-pull MCP tool defs from the DB. used after a
+   * manual "refetch" on an MCP server (mcp_tools rows changed). 
+   */
+  async refreshMcpTools(botId: string): Promise<boolean> {
+    const bot = this.instances.get(botId);
+    if (!bot) return false;
+    await bot.refreshMcpTools(true);
+    return true;
+  }
+
+  /**
+   * Refresh MCP tools for every running bot that has the given server enabled
+   */
+  async refreshMcpForServer(serverId: string): Promise<void> {
+    for (const bot of this.instances.values()) {
+      const cfg = bot.getConfig();
+      if (cfg.mcpServerIds.includes(serverId)) {
+        await bot.refreshMcpTools(true).catch((err) => bot.log.error("MCP refresh failed:", err));
+      }
+    }
+  }
+
   async delete(botId: string): Promise<void> {
     if (this.instances.has(botId)) await this.stop(botId);
     this.statuses.delete(botId);

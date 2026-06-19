@@ -7,6 +7,7 @@ export interface RuntimeCharacter {
   mesExample: string;
   depthPrompt: DepthPrompt | null;
   character_book: CharacterBook | null;
+  systemPrompt: string | null;
 }
 
 export interface ChatMemoryBook {

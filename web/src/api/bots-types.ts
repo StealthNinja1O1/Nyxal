@@ -5,6 +5,7 @@ import type {
   ComfyUiConfig,
   WebSearchConfig,
   DepthPrompt,
+  ToolOverrides,
 } from "@shared/types";
 
 export type BotStatus = "stopped" | "starting" | "online" | "error" | "disabled";
@@ -36,8 +37,6 @@ export interface Bot {
   addTimestamps: boolean;
   addNothink: boolean;
   enableUserStatus: boolean;
-  allowRenaming: boolean;
-  allowLorebookEditing: boolean;
   minResponseIntervalSeconds: number;
   maxRecursionDepth: number;
   logLevel: string;
@@ -45,6 +44,8 @@ export interface Bot {
   comfyui: ComfyUiConfig;
   websearch: WebSearchConfig;
   comfyuiWorkflowId: string | null;
+  toolOverrides: ToolOverrides;
+  mcpServerIds: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -80,8 +81,6 @@ export type BotPatch = Partial<{
   addTimestamps: boolean;
   addNothink: boolean;
   enableUserStatus: boolean;
-  allowRenaming: boolean;
-  allowLorebookEditing: boolean;
   minResponseIntervalSeconds: number;
   maxRecursionDepth: number;
   logLevel: string;
@@ -89,6 +88,8 @@ export type BotPatch = Partial<{
   comfyui: ComfyUiConfig;
   websearch: WebSearchConfig;
   comfyuiWorkflowId: string | null;
+  toolOverrides: ToolOverrides;
+  mcpServerIds: string[];
 }>;
 
 export interface PatchResult {
@@ -104,6 +105,7 @@ export interface Character {
   name: string;
   description: string;
   mesExample: string;
+  systemPrompt: string | null;
   depthPrompt: DepthPrompt | null;
   updatedAt: number;
 }
@@ -112,5 +114,6 @@ export type CharacterPatch = Partial<{
   name: string;
   description: string;
   mesExample: string;
+  systemPrompt: string | null;
   depthPrompt: DepthPrompt | null;
 }>;

@@ -1,6 +1,6 @@
 import { Route, Switch, Link, Router, useLocation } from "wouter";
 import { useEffect } from "preact/hooks";
-import { LayoutDashboard, Bot, KeyRound, Settings, Menu, X, Workflow, ScrollText, Github, Wrench } from "lucide-react";
+import { LayoutDashboard, Bot, KeyRound, Settings, Menu, X, Workflow, ScrollText, Github, Wrench, Plug } from "lucide-react";
 import { signal } from "@preact/signals";
 import { ToastHost } from "./components/ToastHost";
 import { ProvidersRoute } from "./routes/providers";
@@ -11,6 +11,7 @@ import { WorkflowDetailRoute } from "./routes/workflow-detail";
 import { OverviewRoute } from "./routes/overview";
 import { LogsRoute } from "./routes/logs";
 import { ToolCallsRoute } from "./routes/tool-calls";
+import { McpRoute } from "./routes/mcp";
 import { SettingsRoute } from "./routes/settings";
 
 const sidebarOpen = signal(false);
@@ -22,6 +23,7 @@ const NAV: { path: string; label: string; icon: typeof Bot; match: (p: string) =
   { path: "/tool-calls", label: "Tool calls", icon: Wrench, match: (p) => p.startsWith("/tool-calls") },
   { path: "/providers", label: "LLM Providers", icon: KeyRound, match: (p) => p.startsWith("/providers") },
   { path: "/workflows", label: "Workflows", icon: Workflow, match: (p) => p.startsWith("/workflows") },
+  { path: "/mcp", label: "MCP", icon: Plug, match: (p) => p.startsWith("/mcp") },
   { path: "/settings", label: "Settings", icon: Settings, match: (p) => p.startsWith("/settings") },
 ];
 
@@ -56,6 +58,7 @@ function AppInner() {
             <Route path="/providers">{() => <ProvidersRoute />}</Route>
             <Route path="/workflows" component={WorkflowsRoute} />
             <Route path="/workflows/:id" component={WorkflowDetailRoute} />
+            <Route path="/mcp" component={McpRoute} />
             <Route path="/settings" component={SettingsRoute} />
             <Route>
               <Placeholder title="Not found" subtitle="That route doesn't exist yet." />

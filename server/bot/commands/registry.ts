@@ -1,6 +1,7 @@
 import type { Message } from "discord.js";
 import type { BotRuntimeConfig } from "../../config/botConfig";
 import type { ChatMemoryBook } from "../types";
+import type { ToolOverrides } from "../../../shared/types";
 import type { Logger } from "../utils/logger";
 
 export type CommandKind = "instant" | "async" | "recursive";
@@ -40,7 +41,7 @@ export interface CommandDef<
   args: Record<string, unknown>;
   description: string;
   kind: CommandKind;
-  enabled: (config: BotRuntimeConfig) => boolean;
+  defaultEnabled: (config: BotRuntimeConfig) => boolean;
   execute: (args: TArgs, ctx: CommandExecutionContext) => Promise<TResult>;
 }
 
@@ -52,6 +53,11 @@ export class CommandRegistry {
     this.commands.set(def.name, def);
   }
 
+  reset(defs: CommandDef<any>[]): void {
+    this.commands.clear();
+    for (const def of defs) this.register(def);
+  }
+
   get(name: string): CommandDef<any> | undefined {
     return this.commands.get(name);
   }
@@ -60,12 +66,16 @@ export class CommandRegistry {
     return [...this.commands.values()];
   }
 
-  enabledCommands(config: BotRuntimeConfig): CommandDef<any>[] {
-    return this.list().filter((c) => c.enabled(config));
+  enabledCommands(config: BotRuntimeConfig, overrides: ToolOverrides = {}): CommandDef<any>[] {
+    return this.list().filter((c) => {
+      const o = overrides[c.name];
+      if (o?.enabled !== undefined) return o.enabled;
+      return c.defaultEnabled(config);
+    });
   }
 
-  recursiveNames(): string[] {
-    return this.list()
+  recursiveNames(config: BotRuntimeConfig, overrides: ToolOverrides = {}): string[] {
+    return this.enabledCommands(config, overrides)
       .filter((c) => c.kind === "recursive")
       .map((c) => c.name);
   }

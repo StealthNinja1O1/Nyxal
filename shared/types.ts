@@ -43,7 +43,6 @@ export interface BotStatusConfig {
 }
 
 export interface ComfyUiConfig {
-  enabled: boolean;
   baseUrl: string;
   timeoutSeconds: number;
   pollIntervalMs: number;
@@ -75,13 +74,41 @@ export interface ComfyWorkflow {
   updatedAt: number;
 }
 
-/** Web search (Miyami/searxng) */
+/** Web search (Miyami/searxng). enabled is implicit: commands are on by default if baseUrl is set. */
 export interface WebSearchConfig {
-  enabled: boolean;
   baseUrl: string;
   language: string;
   maxResults: number;
   autoBypass: boolean;
+}
+
+/** Per-tool override stored on bots.tool_overrides. keyed by command name. */
+export interface ToolOverride {
+  enabled?: boolean;
+  description?: string;
+}
+export type ToolOverrides = Record<string, ToolOverride>;
+
+/** Stored MCP server row shape (mirrors server/db/schema.ts). */
+export interface McpServer {
+  id: string;
+  name: string;
+  url: string;
+  headers: Record<string, string>;
+  createdAt: number;
+  updatedAt: number;
+  lastFetchedAt: number | null;
+  lastFetchError: string | null;
+  toolCount?: number;
+}
+
+/** Stored MCP tool row shape. */
+export interface McpTool {
+  serverId: string;
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  updatedAt: number;
 }
 
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";

@@ -22,8 +22,10 @@ interface Props {
 }
 
 const CHART_H = 220;
-const PAD_X = 8;
-const PAD_TOP = 8;
+const PAD_LEFT = 8;
+const PAD_RIGHT = 44; // room for the right-edge axis labels
+const PAD_X = PAD_LEFT; // kept for the mouse-move math below
+const PAD_TOP = 14; // bumped so the hover tooltip fits above the bars
 const PAD_BOTTOM = 22;
 
 export function UsageChart({ buckets, bucketSecs }: Props) {
@@ -31,16 +33,18 @@ export function UsageChart({ buckets, bucketSecs }: Props) {
   const [width, setWidth] = useState(640);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
-  // measure available width so bars don't get squashed on narrow screens
+  const hasData = buckets.length > 0;
   useEffect(() => {
     if (!wrapRef.current) return;
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width ?? 640;
-      setWidth(Math.max(280, Math.floor(w)));
-    });
+    const measure = () => {
+      const el = wrapRef.current;
+      if (el) setWidth(Math.max(280, Math.floor(el.clientWidth)));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(wrapRef.current);
     return () => ro.disconnect();
-  }, []);
+  }, [hasData]);
 
   if (buckets.length === 0) {
     return (
@@ -52,7 +56,7 @@ export function UsageChart({ buckets, bucketSecs }: Props) {
     );
   }
 
-  const innerW = Math.max(width - PAD_X * 2, 1);
+  const innerW = Math.max(width - PAD_LEFT - PAD_RIGHT, 1);
   const innerH = CHART_H - PAD_TOP - PAD_BOTTOM;
   const max = Math.max(...buckets.map((b) => b.total), 1);
   const barSlot = innerW / buckets.length;
@@ -72,8 +76,12 @@ export function UsageChart({ buckets, bucketSecs }: Props) {
           const rect = (svg ?? e.currentTarget).getBoundingClientRect();
           if (rect.width === 0) return;
           const x = e.clientX - rect.left;
-          const innerRatio = (rect.width - PAD_X * 2) / rect.width;
-          const frac = (x / rect.width - PAD_X / rect.width) / innerRatio;
+          // chart inner area spans [PAD_LEFT, width - PAD_RIGHT] in svg units;
+          // scale the mouse x into that range to find the bar index.
+          const scale = width / rect.width;
+          const innerX = x * scale - PAD_LEFT;
+          const innerW = Math.max(width - PAD_LEFT - PAD_RIGHT, 1);
+          const frac = innerX / innerW;
           const idx = Math.floor(frac * buckets.length);
           setHoverIdx(idx >= 0 && idx < buckets.length ? idx : null);
         }}
@@ -91,8 +99,8 @@ export function UsageChart({ buckets, bucketSecs }: Props) {
             return (
               <g key={t}>
                 <line
-                  x1={PAD_X}
-                  x2={width - PAD_X}
+                  x1={PAD_LEFT}
+                  x2={width - PAD_RIGHT}
                   y1={y}
                   y2={y}
                   stroke="var(--border)"
@@ -100,7 +108,7 @@ export function UsageChart({ buckets, bucketSecs }: Props) {
                   opacity={0.5}
                 />
                 <text
-                  x={width - PAD_X + 2}
+                  x={width - PAD_RIGHT + 4}
                   y={y + 3}
                   fontSize={9}
                   fill="var(--text-faint)"
@@ -117,8 +125,8 @@ export function UsageChart({ buckets, bucketSecs }: Props) {
           {hoverIdx != null && (
             <line
               class="usage-hover-line"
-              x1={PAD_X + hoverIdx * barSlot + barSlot / 2}
-              x2={PAD_X + hoverIdx * barSlot + barSlot / 2}
+              x1={PAD_LEFT + hoverIdx * barSlot + barSlot / 2}
+              x2={PAD_LEFT + hoverIdx * barSlot + barSlot / 2}
               y1={PAD_TOP}
               y2={PAD_TOP + innerH}
             />
@@ -127,7 +135,7 @@ export function UsageChart({ buckets, bucketSecs }: Props) {
           {/* bars */}
           {buckets.map((b, i) => {
             const h = (b.total / max) * innerH;
-            const x = PAD_X + i * barSlot + (barSlot - barW) / 2;
+            const x = PAD_LEFT + i * barSlot + (barSlot - barW) / 2;
             const y = PAD_TOP + innerH - h;
             return (
               <rect
@@ -146,7 +154,7 @@ export function UsageChart({ buckets, bucketSecs }: Props) {
           {[0, Math.floor(buckets.length / 2), buckets.length - 1].map((i, k) => (
             <text
               key={k}
-              x={PAD_X + i * barSlot + barSlot / 2}
+              x={PAD_LEFT + i * barSlot + barSlot / 2}
               y={CHART_H - 6}
               fontSize={9}
               fill="var(--text-faint)"

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "preact/hooks";
 import { Fragment } from "preact";
-import { Wrench, Loader2, ChevronDown, ChevronUp, Filter, CheckCircle2, XCircle } from "lucide-react";
+import { Wrench, Loader2, ChevronDown, ChevronUp, Filter, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 import { toolCallsApi, type ToolCall, type ToolKind } from "../api/toolCalls";
 import { bots, loadBots } from "../state/bots";
 import { Button } from "../components/Button";
@@ -95,11 +95,16 @@ export function ToolCallsRoute() {
           <h2>
             Tool calls
           </h2>
-          <Button variant="ghost" size="sm" onClick={() => setShowFilters((v) => !v)}>
-            <Filter size={14} />
-            Filters
-            {showFilters ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-          </Button>
+          <div style={{ display: "flex", gap: 6 }}>
+            <Button variant="ghost" size="sm" onClick={() => void loadFirst()} disabled={loading} title="Reload">
+              <RefreshCw size={14} class={loading ? "spin" : ""} />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setShowFilters((v) => !v)}>
+              <Filter size={14} />
+              Filters
+              {showFilters ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </Button>
+          </div>
         </div>
 
         {showFilters && (

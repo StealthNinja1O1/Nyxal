@@ -39,8 +39,6 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
     addTimestamps: bot.addTimestamps,
     addNothink: bot.addNothink,
     enableUserStatus: bot.enableUserStatus,
-    allowRenaming: bot.allowRenaming,
-    allowLorebookEditing: bot.allowLorebookEditing,
     enableVision: bot.enableVision,
   });
 
@@ -86,8 +84,6 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
       addTimestamps: toggles.addTimestamps,
       addNothink: toggles.addNothink,
       enableUserStatus: toggles.enableUserStatus,
-      allowRenaming: toggles.allowRenaming,
-      allowLorebookEditing: toggles.allowLorebookEditing,
     };
     if (token.trim()) patch.discordToken = token.trim();
 
@@ -371,18 +367,6 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
           hint="Disables thinking for models that support it."
           checked={toggles.addNothink}
           onChange={(v) => setT("addNothink", v)}
-        />
-        <Toggle
-          label="Allow renaming"
-          hint="Lets the bot rename itself / others via commands."
-          checked={toggles.allowRenaming}
-          onChange={(v) => setT("allowRenaming", v)}
-        />
-        <Toggle
-          label="Allow lorebook editing"
-          hint="Lets the bot create/update memory entries via editOrAddToLorebook."
-          checked={toggles.allowLorebookEditing}
-          onChange={(v) => setT("allowLorebookEditing", v)}
         />
       </div>
 

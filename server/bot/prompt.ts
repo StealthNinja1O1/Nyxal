@@ -49,6 +49,8 @@ interface BuildPromptOptions {
     mesExample: string;
     depthPrompt: { depth: number; prompt: string; role?: string } | null;
     character_book: CharacterBook | null;
+    // null = fall back to the built-in PROMPT_TEMPLATE. set per-character.
+    systemPrompt?: string | null;
   };
   messages: PromptMessage[];
   userName?: string;
@@ -156,7 +158,7 @@ export async function buildAIRequest(
   const aiMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     {
       role: "system",
-      content: PROMPT_TEMPLATE.replace(
+      content: (character.systemPrompt ?? PROMPT_TEMPLATE).replace(
         "{{availableCommands}}",
         availableCommands.map((c) => JSON.stringify(c)).join("\n"),
       ),
@@ -252,20 +254,18 @@ export async function buildAIRequest(
   let lorebookEntries = "Lorebook entries:\n";
   const staticBook = character.character_book ? await parseLorebook(character.character_book as any) : null;
 
-  if (config.allowLorebookEditing) {
-    if (chatMemoryBook && chatMemoryBook.entries.length > 0) {
-      lorebookEntries += "Editable memory entries (you can modify these with editOrAddToLorebook):\n";
-      for (const entry of chatMemoryBook.entries)
-        lorebookEntries += `Entry name: ${entry.name || "Unnamed entry"}; Keywords: ${entry.keys?.join(", ") || "No keywords"};\n`;
-    } else {
-      lorebookEntries += "No editable memory entries yet. You can create them with editOrAddToLorebook.\n";
-    }
-    if (staticBook?.entries && staticBook.entries.length > 0) {
-      lorebookEntries += "\nStatic lore entries (read-only, do NOT try to edit these):\n";
-      for (const entry of staticBook.entries)
-        lorebookEntries += `Entry name: ${entry.name || "Unnamed entry"}; Keywords: ${entry.keys?.join(", ") || "No keywords"};\n`;
-    }
-  } else if (staticBook?.entries && staticBook.entries.length > 0) {
+  // memory entries are always editable (the editOrAddToLorebook command is
+  // a per-tool toggle on the Tools tab, but if it's enabled the bot needs
+  // to know what's there). static entries are always read-only.
+  if (chatMemoryBook && chatMemoryBook.entries.length > 0) {
+    lorebookEntries += "Editable memory entries (you can modify these with editOrAddToLorebook):\n";
+    for (const entry of chatMemoryBook.entries)
+      lorebookEntries += `Entry name: ${entry.name || "Unnamed entry"}; Keywords: ${entry.keys?.join(", ") || "No keywords"};\n`;
+  } else {
+    lorebookEntries += "No editable memory entries yet. You can create them with editOrAddToLorebook.\n";
+  }
+  if (staticBook?.entries && staticBook.entries.length > 0) {
+    lorebookEntries += "\nStatic lore entries (read-only, do NOT try to edit these):\n";
     for (const entry of staticBook.entries)
       lorebookEntries += `Entry name: ${entry.name || "Unnamed entry"}; Keywords: ${entry.keys?.join(", ") || "No keywords"};\n`;
   }

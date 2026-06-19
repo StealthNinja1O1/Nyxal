@@ -8,8 +8,8 @@ import type { Logger } from "./utils/logger";
 import { makeTokenCounter } from "./utils/tokenCounter";
 import { CommandMetadataStore } from "./stores/commandMetadataStore";
 import { upsertMemoryEntry } from "./stores/memoryStore";
-import { buildRegistry, availableCommands, recursiveCommandNames } from "./commands";
-import type { CommandRegistry, CommandExecutionContext } from "./commands";
+import { buildRegistry, availableCommandsFromRegistry, BUILTIN_COMMANDS } from "./commands";
+import type { CommandDef, CommandRegistry, CommandExecutionContext } from "./commands";
 import { CommandHandler } from "./commands/CommandHandler";
 import { MessageQueue } from "./MessageQueue";
 import { DiscordJsClient } from "./adapter/DiscordJsClient";
@@ -18,6 +18,7 @@ import { generateAIResponse, type PromptDeps } from "./prompt";
 import { runResponsePipeline } from "./utils/responsePipeline";
 import { MessageResponseContext } from "./utils/ResponseContexts";
 import { fetchReferencedMessage, extractImagesFromMessage, extractStickerImagesFromMessage } from "./history";
+import { loadMcpCommandDefs } from "./mcp/loader";
 
 export interface DiscordBotOptions {
   config: BotRuntimeConfig;
@@ -33,9 +34,12 @@ export class DiscordBot {
   readonly log: Logger;
   readonly tokens: ReturnType<typeof makeTokenCounter>;
   readonly metadataStore: CommandMetadataStore;
-  readonly registry: CommandRegistry = buildRegistry();
+  // mutable so refreshMcpTools() can swap builtin+mcp defs in place.
+  registry: CommandRegistry = buildRegistry();
   recursiveNames: string[];
   availableCommands: Record<string, unknown>[];
+  // current MCP defs registered on the bot (for diffing on hot reload).
+  private mcpDefs: CommandDef[] = [];
   readonly creds: LlmCreds;
   readonly deps: PromptDeps;
 
@@ -59,8 +63,8 @@ export class DiscordBot {
     this.tokens = makeTokenCounter(this.log);
 
     this.metadataStore = new CommandMetadataStore(this.config.botId, this.log);
-    this.recursiveNames = recursiveCommandNames(this.config);
-    this.availableCommands = availableCommands(this.config);
+    this.recursiveNames = this.registry.recursiveNames(this.config, this.config.toolOverrides);
+    this.availableCommands = availableCommandsFromRegistry(this.registry, this.config, this.config.toolOverrides);
 
     this.creds = {
       baseUrl: this.config.llmBaseUrl,
@@ -93,18 +97,14 @@ export class DiscordBot {
     this.botDiscordId = userId;
     this.log.info(`Logged in as ${tag}`);
     this.log.info(`Character: ${this.character.name}`);
-    this.log.info(
-      `Channels: ${this.config.channelIds.length > 0 ? this.config.channelIds.join(", ") : "all"}`,
-    );
+    this.log.info(`Channels: ${this.config.channelIds.length > 0 ? this.config.channelIds.join(", ") : "all"}`);
     this.log.info(`Random response rate: 1 in ${this.config.randomResponseRate}`);
     const visionInfo = this.config.enableVision
       ? this.config.visionModel
         ? `enabled (separate model: ${this.config.visionModel})`
         : "enabled (native)"
       : "disabled";
-    this.log.info(
-      `Vision: ${visionInfo} | Memory book editing: ${this.config.allowLorebookEditing ? "enabled" : "disabled"}`,
-    );
+    this.log.info(`Vision: ${visionInfo} | Memory book editing: enabled (toggle per-tool on the Tools tab)`);
     this.log.info(
       `Model: ${this.config.llmModel} | Max tokens: ${this.config.maxContextTokens} | History: ${this.config.maxHistoryMessages} messages`,
     );
@@ -239,7 +239,9 @@ export class DiscordBot {
       const nextMessage = this.messageQueue.dequeue(channelId);
       if (!nextMessage) break;
       if (!this.shouldRespond(nextMessage)) {
-        this.log.debug(`Skipping queued message from ${nextMessage.author.username} - no longer meets response criteria`);
+        this.log.debug(
+          `Skipping queued message from ${nextMessage.author.username} - no longer meets response criteria`,
+        );
         continue;
       }
       this.log.debug(
@@ -318,10 +320,32 @@ export class DiscordBot {
     return depths;
   }
 
-  // runtime config + character hot reload (live apply). called by BotManager.
-  // swaps the whole config, then rebuilds the enabled-command list and
-  // refreshes presence so status text/type edits show up live.
+  /**
+   * Pull MCP command defs from the DB and merge them into the registry.
+   */
+  async refreshMcpTools(force = false): Promise<void> {
+    const { defs } = await loadMcpCommandDefs(this.config.mcpServerIds);
+    const oldNames = new Set(this.mcpDefs.map((d) => d.name));
+    const newNames = new Set(defs.map((d) => d.name));
+    const changed = force || oldNames.size !== newNames.size || [...newNames].some((n) => !oldNames.has(n));
+    if (changed) {
+      this.mcpDefs = defs;
+      this.registry.reset([...BUILTIN_COMMANDS, ...defs]);
+      this.log.info(`Loaded ${defs.length} MCP tool(s) across ${this.config.mcpServerIds.length} server(s)`);
+    }
+    this.refreshCommandLists();
+  }
+
+  /** Rebuild the advertised command list + recursive names from current state. */
+  private refreshCommandLists(): void {
+    this.availableCommands = availableCommandsFromRegistry(this.registry, this.config, this.config.toolOverrides);
+    this.recursiveNames = this.registry.recursiveNames(this.config, this.config.toolOverrides);
+    this.deps.availableCommands = this.availableCommands;
+  }
+
   applyConfigUpdate(config: BotRuntimeConfig): void {
+    const prevMcpServerIds = this.config.mcpServerIds;
+    const prevOverrides = this.config.toolOverrides;
     this.config = config;
     this.deps.config = config;
     this.creds.baseUrl = config.llmBaseUrl;
@@ -329,9 +353,12 @@ export class DiscordBot {
     this.creds.providerId = config.llmProviderId;
     this.deps.creds = this.creds;
 
-    this.availableCommands = availableCommands(config);
-    this.recursiveNames = recursiveCommandNames(config);
-    this.deps.availableCommands = this.availableCommands;
+    // tool overrides apply live. server id changes need a refresh.
+    const mcpChanged =
+      prevMcpServerIds.length !== config.mcpServerIds.length ||
+      prevMcpServerIds.some((id) => !config.mcpServerIds.includes(id));
+    if (mcpChanged) void this.refreshMcpTools();
+    else if (JSON.stringify(prevOverrides) !== JSON.stringify(config.toolOverrides)) this.refreshCommandLists();
 
     this.log.setLevel((config.logLevel.toUpperCase() as any) || "INFO");
 
@@ -347,6 +374,8 @@ export class DiscordBot {
 
   async start(): Promise<void> {
     await this.metadataStore.cleanupByTTL();
+    // pull MCP tools before login so the first prompt has them advertised
+    await this.refreshMcpTools();
     await this.client.login(this.config.botToken);
   }
 
