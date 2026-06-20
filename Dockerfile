@@ -12,9 +12,10 @@ RUN bun run compile
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
-# ca-certs for https calls
+# ca-certs for https calls + curl for the docker healthcheck (compose runs
+# `curl /api/health` from inside the container to know if nyxal is up).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/build/nyxal /app/nyxal

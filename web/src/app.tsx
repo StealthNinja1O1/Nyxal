@@ -12,7 +12,7 @@ import { OverviewRoute } from "./routes/overview";
 import { LogsRoute } from "./routes/logs";
 import { ToolCallsRoute } from "./routes/tool-calls";
 import { McpRoute } from "./routes/mcp";
-import { SettingsRoute } from "./routes/settings";
+import { SettingsRoute, VERSION } from "./routes/settings";
 
 const sidebarOpen = signal(false);
 
@@ -90,7 +90,7 @@ function Sidebar({ location }: { location: string }) {
         ))}
       </nav>
       <div class="sidebar-footer">
-        <span class="phase-badge">V0.0.1</span>
+        <span class="phase-badge">V{VERSION}</span>
       </div>
     </aside>
   );

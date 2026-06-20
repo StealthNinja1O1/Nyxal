@@ -7,7 +7,7 @@ import { Field } from "../components/Field";
 import { LoadingState } from "../components/State";
 import { Callout } from "../components/Callout";
 
-const VERSION = "0.1.0";
+export const VERSION = "0.1.1";
 const GITHUB_URL = "https://github.com/StealthNinja1O1/Nyxal";
 
 export function SettingsRoute() {
