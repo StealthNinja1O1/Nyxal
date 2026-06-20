@@ -1,13 +1,16 @@
-// compile Nyxal into a SINGLE standalone bun binary
+// compile Nyxal into SINGLE standalone bun binaries
 //
 // usage:
-//   bun scripts/compile.ts                  # native build for the current host
-//   bun scripts/compile.ts bun-windows-x64  # cross-compile (list below)
-//   bun scripts/compile.ts bun-linux-x64 | bun-linux-arm64 | bun-linux-arm64-musl
-//   bun scripts/compile.ts bun-darwin-arm64 | bun-darwin-x64
+//   bun scripts/compile.ts                                      # native host build
+//   bun scripts/compile.ts bun-linux-x64                        # one cross target
+//   bun scripts/compile.ts bun-linux-x64 bun-windows-x64 ...    # several at once
 //
-// output -> ./build/nyxal[.exe]
-
+// targets: bun-windows-x64 | bun-linux-x64 | bun-linux-arm64 | bun-linux-arm64-musl
+//          bun-darwin-arm64 | bun-darwin-x64
+//
+// web build + manifest generation happen ONCE; each target is then compiled.
+// output -> ./build/nyxal[.exe] (native) or ./build/nyxal-<target>[.exe] (cross).
+//
 // note: --bytecode is platform-specific, so it is only added for native builds.
 // cross-compiled targets skip it to avoid shipping a binary that won't start.
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
@@ -19,7 +22,7 @@ const BUILD_DIR = join(ROOT, "build");
 const MANIFEST = join(ROOT, "server", "embeddedManifest.gen.ts");
 const STUB = readFileSync(MANIFEST, "utf8");
 
-const target = process.argv[2];
+const targets = process.argv.slice(2);
 
 function outfileFor(t: string | undefined): string {
   if (!t) return process.platform === "win32" ? "nyxal.exe" : "nyxal";
@@ -59,12 +62,11 @@ function webUrlFor(absPath: string): string {
   return rel === "index.html" ? "/" : `/${rel}`;
 }
 
-let binName = outfileFor(target);
+let binName = outfileFor(targets[0]);
+const built: string[] = [];
 try {
-  // 1. build the web ui -> web/dist
   run("bun", ["run", "build"], "web build");
 
-  // 2. generate the embedded manifest
   const webFiles = walk(join(ROOT, "web", "dist"));
   const migFiles = walk(join(ROOT, "server", "db", "migrations"));
   console.log(`\n[manifest] ${webFiles.length} web files, ${migFiles.length} migration files`);
@@ -107,26 +109,32 @@ try {
 
   writeFileSync(MANIFEST, lines.join("\n"));
 
-  const binPath = join(BUILD_DIR, binName);
+  // 3. compile each target (or the native host build if none given). the
+  // manifest stays active across all compiles and is restored in finally.
   mkdirSync(BUILD_DIR, { recursive: true });
-
-  const compileArgs = [
-    "build", "server/index.ts",
-    "--compile",
-    "--minify",
-    "--asset-naming=[name].[ext]",
-    "--define", "__COMPILED__=true",
-    "--outfile", binPath,
-  ];
-  if (target) {
-    compileArgs.push("--target", target);
-  } else {
-    compileArgs.push("--bytecode");
+  const buildList = targets.length > 0 ? targets : [undefined];
+  for (const t of buildList) {
+    binName = outfileFor(t);
+    const binPath = join(BUILD_DIR, binName);
+    const compileArgs = [
+      "build", "server/index.ts",
+      "--compile",
+      "--minify",
+      "--asset-naming=[name].[ext]",
+      "--define", "__COMPILED__=true",
+      "--outfile", binPath,
+    ];
+    if (t) {
+      compileArgs.push("--target", t);
+    } else {
+      compileArgs.push("--bytecode"); // platform-specific, native only
+    }
+    run("bun", compileArgs, `compile${t ? " " + t : ""}`);
+    built.push(binName);
   }
-  run("bun", compileArgs, "compile");
 } finally {
   restoreStub();
 }
 
-console.log(`\n done. single-file binary: build/${binName}`);
-console.log(`   run with:   ./build/${binName}   (db lands in build/data on first run)`);
+console.log(`\n done. ${built.length} binary/built -> build/:`);
+for (const b of built) console.log(`   - build/${b}`);

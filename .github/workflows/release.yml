@@ -11,45 +11,46 @@ permissions:
 
 jobs:
   build-binaries:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            asset: nyxal-linux-x64.gz
-          - os: windows-latest
-            asset: nyxal-windows-x64.zip
-          - os: macos-14
-            asset: nyxal-darwin-arm64.gz
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
       - run: bun install --frozen-lockfile
 
-      # native build for the runner's platform (includes bytecode + correct
-      # sharp addon). output -> a single self-contained binary in build/.
-      - run: bun scripts/compile.ts
-        shell: bash
+      - run: bun scripts/compile.ts bun-linux-x64 bun-linux-arm64 bun-windows-x64 bun-darwin-arm64 bun-darwin-x64
+      - name: Smoke test (linux-x64)
+        run: |
+          ./build/nyxal-linux-x64 &
+          PID=$!
+          sleep 3
+          curl -fsS http://localhost:3000/api/health
+          curl -fsS http://localhost:3000/ | grep -q '<!doctype html>'
+          kill $PID
 
       - name: Archive (unix)
-        if: matrix.os != 'windows-latest'
-        run: gzip -c build/nyxal > ${{ matrix.asset }}
+        run: |
+          gzip -kf build/nyxal-linux-x64
+          gzip -kf build/nyxal-linux-arm64
+          gzip -kf build/nyxal-darwin-arm64
+          gzip -kf build/nyxal-darwin-x64
 
       - name: Archive (windows)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: Compress-Archive -Path build\nyxal.exe -DestinationPath ${{ matrix.asset }}
+        run: zip -j build/nyxal-windows-x64.zip build/nyxal-windows-x64.exe
 
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.asset }}
+          files: |
+            build/nyxal-linux-x64.gz
+            build/nyxal-linux-arm64.gz
+            build/nyxal-darwin-arm64.gz
+            build/nyxal-darwin-x64.gz
+            build/nyxal-windows-x64.zip
           generate_release_notes: true
 
   docker:
