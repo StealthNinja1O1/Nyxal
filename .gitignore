@@ -132,6 +132,7 @@ dist
 /.env
 /data/
 /web/dist/
+/build/
 *.db
 *.db-journal
 *.db-wal

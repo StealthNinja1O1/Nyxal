@@ -1,0 +1,14 @@
+# keep the build context lean + reproducible
+node_modules
+build
+data
+web/dist
+oldCode
+.git
+.gitignore
+.github
+.vscode
+.env
+.env.*
+*.md
+LICENSE

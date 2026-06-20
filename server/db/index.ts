@@ -3,8 +3,9 @@ import { drizzle } from "drizzle-orm/bun-sqlite";
 import { mkdirSync } from "fs";
 import { dirname } from "path";
 import * as schema from "./schema";
+import { dbPath } from "../paths";
 
-export const dbPath = process.env.NYXAL_DB_PATH || "./data/nyxal.db";
+export { dbPath };
 mkdirSync(dirname(dbPath), { recursive: true });
 
 export const sqlite = new Database(dbPath);

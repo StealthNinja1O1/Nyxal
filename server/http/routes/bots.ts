@@ -16,6 +16,7 @@ import { eq, inArray } from "drizzle-orm";
 import { botManager } from "../../bot/BotManager";
 import { newBotDefaults, ensureCharacter, resolveBotConfig } from "../../config/resolveBotConfig";
 import { BUILTIN_COMMANDS } from "../../bot/commands";
+import { PROMPT_TEMPLATE } from "../../bot/prompt";
 import { newId, nowMs } from "../../db/ids";
 import type { ToolOverride } from "../../../shared/types";
 
@@ -74,6 +75,8 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
     const rows = await db.select().from(bots).orderBy(bots.createdAt);
     return rows.map(botRowToPublic);
   })
+
+  .get("/default-system-prompt", () => ({ template: PROMPT_TEMPLATE }))
 
   .post(
     "/",

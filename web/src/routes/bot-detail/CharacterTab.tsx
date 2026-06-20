@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { Save, FileText, RotateCcw } from "lucide-react";
+import { Save, FileText, RotateCcw, Download } from "lucide-react";
 import { botsApi } from "../../api/bots";
 import type { Character } from "../../api/bots-types";
 import { Button } from "../../components/Button";
@@ -71,6 +71,18 @@ export function CharacterTab({ botId }: { botId: string }) {
       toast.show("System prompt reset to default", "info");
     } finally {
       setSaving(false);
+    }
+  }
+
+  // pull the built-in template into the editor so it can be edited without
+  // saving first. this is a local-only fill; Save commits it.
+  async function loadDefaultPrompt() {
+    try {
+      const { template } = await botsApi.getDefaultSystemPrompt();
+      setSystemPrompt(template);
+      toast.show("Default template loaded. Save to commit the override.", "info");
+    } catch (err) {
+      toast.show(`Failed to load default: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
   }
 
@@ -168,7 +180,11 @@ export function CharacterTab({ botId }: { botId: string }) {
           mono
           placeholder="(using the built-in default template)"
         />
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4 }}>
+          <Button variant="ghost" size="sm" onClick={loadDefaultPrompt} disabled={saving}>
+            <Download size={12} />
+            Load default template
+          </Button>
           <Button variant="ghost" size="sm" onClick={resetSystemPrompt} disabled={saving || !systemPrompt}>
             <RotateCcw size={12} />
             Reset to default

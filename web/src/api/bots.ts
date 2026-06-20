@@ -20,6 +20,8 @@ export const botsApi = {
   getCharacter: (id: string) => http.get<Character>(`/bots/${id}/character`),
   updateCharacter: (id: string, patch: CharacterPatch) =>
     http.put<Character>(`/bots/${id}/character`, patch),
+  getDefaultSystemPrompt: () =>
+    http.get<{ template: string }>(`/bots/default-system-prompt`),
   getTools: (id: string) =>
     http.get<{
       builtin: Array<{
