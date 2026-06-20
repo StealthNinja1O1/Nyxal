@@ -26,7 +26,8 @@ const targets = process.argv.slice(2);
 
 function outfileFor(t: string | undefined): string {
   if (!t) return process.platform === "win32" ? "nyxal.exe" : "nyxal";
-  return t.includes("windows") ? `nyxal-${t}.exe` : `nyxal-${t}`;
+  const name = t.replace(/^bun-/, "");
+  return name.includes("windows") ? `nyxal-${name}.exe` : `nyxal-${name}`;
 }
 
 function restoreStub(): void {
