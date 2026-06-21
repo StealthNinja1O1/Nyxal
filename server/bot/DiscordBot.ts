@@ -357,8 +357,15 @@ export class DiscordBot {
     const mcpChanged =
       prevMcpServerIds.length !== config.mcpServerIds.length ||
       prevMcpServerIds.some((id) => !config.mcpServerIds.includes(id));
-    if (mcpChanged) void this.refreshMcpTools();
-    else if (JSON.stringify(prevOverrides) !== JSON.stringify(config.toolOverrides)) this.refreshCommandLists();
+    if (mcpChanged) {
+      // refreshMcpTools resets the registry + calls refreshCommandLists.
+      void this.refreshMcpTools();
+    } else {
+      // comfyui workflows/resolutions, tool overrides, and enabled-state
+      // all feed into describeGenerateImage + the advertised command list,
+      // so rebuild on every config update
+      this.refreshCommandLists();
+    }
 
     this.log.setLevel((config.logLevel.toUpperCase() as any) || "INFO");
 
