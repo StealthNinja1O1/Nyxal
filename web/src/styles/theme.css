@@ -180,6 +180,57 @@ a { color: inherit; text-decoration: none; }
   display: inline-flex;
 }
 .icon-btn:hover { color: var(--text); border-color: var(--border-strong); }
+.icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.icon-btn.danger:hover { color: var(--danger, #e5484d); border-color: var(--danger, #e5484d); }
+
+/* star button (default-workflow picker) */
+.star-btn { color: var(--text-dim); }
+.star-btn.active { color: var(--accent); border-color: var(--accent); }
+
+/* workflow assignment rows on the extensions tab */
+.workflow-assign-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  background: var(--bg);
+}
+.workflow-assign-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.workflow-assign-name { font-size: 14px; font-weight: 500; }
+.workflow-assign-desc { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-add-row { margin-top: 6px; }
+.workflow-add-row .field-input { font-size: 13px; }
+
+/* resolution editor rows */
+.setting-subgroup {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.setting-subgroup-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.resolution-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.resolution-row:last-child { margin-bottom: 0; }
+.resolution-name { flex: 1; min-width: 80px; }
+.resolution-dim { width: 80px; }
+.resolution-x { color: var(--text-dim); font-size: 13px; }
 
 .scrim { display: none; }
 
@@ -848,6 +899,21 @@ select.field-input option {
   gap: 12px;
   margin-bottom: 16px;
   flex-wrap: wrap;
+}
+
+/* sort dropdown group on the lorebook toolbar */
+.sort-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+.sort-select {
+  width: auto;
+  min-width: 160px;
+  padding: 4px 8px;
+  font-size: 13px;
 }
 
 /* entry preview (lorebook / memory row) */

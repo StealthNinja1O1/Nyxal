@@ -1,27 +1,28 @@
-// bot extensions: comfyui + websearch (and later MCP servers).
-// - assign a shared comfyui workflow (selectable from the global list)
-// - comfyui connection + image gen settings (the comfyui blob)
+// bot extensions: comfyui + websearch.
+// - assign one or more shared comfyui workflows + pick a default
+// - comfyui connection + image gen settings (the comfyui blob, incl. dynamic resolutions)
 // - websearch settings (the websearch blob)
-// - MCP placeholder (coming later)
 //
 // all live-apply (no restart) per the hot-reload classifier. toggling
 // websearch/comfyui on/off now also rebuilds the bot's advertised command
 // list (see DiscordBot.applyConfigUpdate)
 
 import { useEffect, useState } from "preact/hooks";
-import { Save, ExternalLink, Plug } from "lucide-react";
+import { Save, ExternalLink, Plus, Trash2, Star, X } from "lucide-react";
 import { Link } from "wouter";
 import type { Bot } from "../../api/bots-types";
-import type { ComfyUiConfig, WebSearchConfig } from "@shared/types";
+import type { ComfyUiConfig, WebSearchConfig, ComfyResolution } from "@shared/types";
 import { updateBot } from "../../state/bots";
 import { workflows, loadWorkflows } from "../../state/workflows";
 import { Button } from "../../components/Button";
 import { Field } from "../../components/Field";
 import { Toggle } from "../../components/Toggle";
-import { LoadingState } from "../../components/State";
 
 export function ExtensionsTab({ bot }: { bot: Bot }) {
-  const [workflowId, setWorkflowId] = useState<string>(bot.comfyuiWorkflowId ?? "");
+  const [workflowIds, setWorkflowIds] = useState<string[]>(bot.comfyuiWorkflowIds ?? []);
+  const [defaultWorkflowId, setDefaultWorkflowId] = useState<string | null>(
+    bot.comfyuiDefaultWorkflowId,
+  );
   const [comfyui, setComfyui] = useState<ComfyUiConfig>(bot.comfyui);
   const [websearch, setWebsearch] = useState<WebSearchConfig>(bot.websearch);
   const [saving, setSaving] = useState<false | "comfyui" | "websearch" | "workflow">(false);
@@ -32,7 +33,8 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
 
   // reseed when the bot row changes after a save
   useEffect(() => {
-    setWorkflowId(bot.comfyuiWorkflowId ?? "");
+    setWorkflowIds(bot.comfyuiWorkflowIds ?? []);
+    setDefaultWorkflowId(bot.comfyuiDefaultWorkflowId);
     setComfyui(bot.comfyui);
     setWebsearch(bot.websearch);
   }, [bot.updatedAt]);
@@ -44,9 +46,32 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
     setWebsearch((s) => ({ ...s, [k]: v }));
   }
 
+  // ---- workflow assignment helpers ----
+  const assignedWorkflows = workflowIds
+    .map((id) => workflows.value.find((w) => w.id === id))
+    .filter((w): w is NonNullable<typeof w> => !!w);
+  const unassignedWorkflows = workflows.value.filter((w) => !workflowIds.includes(w.id));
+
+  function assignWorkflow(id: string) {
+    setWorkflowIds((ids) => [...ids, id]);
+    // auto-pick default if none set yet
+    if (!defaultWorkflowId) setDefaultWorkflowId(id);
+  }
+  function unassignWorkflow(id: string) {
+    setWorkflowIds((ids) => ids.filter((x) => x !== id));
+    if (defaultWorkflowId === id) {
+      const remaining = workflowIds.filter((x) => x !== id);
+      setDefaultWorkflowId(remaining[0] ?? null);
+    }
+  }
+
   async function saveWorkflow() {
     setSaving("workflow");
-    await updateBot(bot.id, { comfyuiWorkflowId: workflowId || null }, { silent: true });
+    await updateBot(
+      bot.id,
+      { comfyuiWorkflowIds: workflowIds, comfyuiDefaultWorkflowId: defaultWorkflowId },
+      { silent: true },
+    );
     setSaving(false);
   }
   async function saveComfy() {
@@ -60,42 +85,98 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
     setSaving(false);
   }
 
+  // ---- resolution editor helpers ----
+  function setResolution(idx: number, patch: Partial<ComfyResolution>) {
+    setComfyui((c) => ({
+      ...c,
+      resolutions: c.resolutions.map((r, i) => (i === idx ? { ...r, ...patch } : r)),
+    }));
+  }
+  function addResolution() {
+    setComfyui((c) => ({
+      ...c,
+      resolutions: [...c.resolutions, { name: "new", width: 1024, height: 1024 }],
+    }));
+  }
+  function removeResolution(idx: number) {
+    setComfyui((c) => ({
+      ...c,
+      resolutions: c.resolutions.filter((_, i) => i !== idx),
+    }));
+  }
+
   return (
     <div>
       {/* workflow assignment */}
       <div class="setting-group">
-        <div class="setting-group-title">Workflow</div>
-        <div class="field">
-          <label class="field-label" for="workflow">Assigned workflow</label>
-          <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
-            <select
-              id="workflow"
-              class="field-input"
-              value={workflowId}
-              onChange={(e) => setWorkflowId((e.target as HTMLSelectElement).value)}
-            >
-              <option value="">(none)</option>
-              {workflows.value.map((w) => (
-                <option key={w.id} value={w.id}>{w.name}</option>
-              ))}
-            </select>
-            <Button variant="subtle" size="sm" onClick={saveWorkflow} loading={saving === "workflow"}>
-              <Save size={14} /> Save
-            </Button>
-          </div>
-          {workflowId && (
-            <p class="field-hint" style={{ marginTop: 6 }}>
-              <Link href={`/workflows/${workflowId}`} class="muted-link">
-                Edit this workflow's text nodes <ExternalLink size={11} style={{ verticalAlign: "middle" }} />
-              </Link>
-            </p>
-          )}
-          {workflows.value.length === 0 && (
-            <p class="field-hint" style={{ marginTop: 6 }}>
-              No workflows yet.{" "}
-              <Link href="/workflows" class="muted-link">Create one first</Link>.
-            </p>
-          )}
+        <div class="setting-group-title">Workflows</div>
+        <p class="field-hint" style={{ marginTop: 0, marginBottom: 10 }}>
+          Assign one or more workflows. The default (starred) is used unless the LLM overrides it. The bot's
+          context lists all assigned workflows by name so the LLM can pick one.
+        </p>
+
+        {assignedWorkflows.length === 0 && workflows.value.length === 0 ? (
+          <p class="field-hint">
+            No workflows yet.{" "}
+            <Link href="/workflows" class="muted-link">Create one first</Link>.
+          </p>
+        ) : (
+          <>
+            {assignedWorkflows.map((w) => (
+              <div class="workflow-assign-row" key={w.id}>
+                <button
+                  type="button"
+                  class={`icon-btn star-btn ${defaultWorkflowId === w.id ? "active" : ""}`}
+                  onClick={() => setDefaultWorkflowId(w.id)}
+                  title={defaultWorkflowId === w.id ? "Default workflow" : "Set as default"}
+                  aria-label="Set as default"
+                >
+                  <Star size={15} fill={defaultWorkflowId === w.id ? "currentColor" : "none"} />
+                </button>
+                <div class="workflow-assign-info">
+                  <span class="workflow-assign-name">{w.name}</span>
+                  {w.description && <span class="workflow-assign-desc">{w.description}</span>}
+                </div>
+                <Link href={`/workflows/${w.id}`} class="icon-btn" title="Edit workflow">
+                  <ExternalLink size={14} />
+                </Link>
+                <button
+                  type="button"
+                  class="icon-btn danger"
+                  onClick={() => unassignWorkflow(w.id)}
+                  title="Unassign"
+                  aria-label="Unassign"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            ))}
+
+            {unassignedWorkflows.length > 0 && (
+              <div class="workflow-add-row">
+                <select
+                  class="field-input"
+                  value=""
+                  onChange={(e) => {
+                    const v = (e.target as HTMLSelectElement).value;
+                    if (v) assignWorkflow(v);
+                    (e.target as HTMLSelectElement).value = "";
+                  }}
+                >
+                  <option value="">+ assign a workflow...</option>
+                  {unassignedWorkflows.map((w) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+          <Button onClick={saveWorkflow} loading={saving === "workflow"}>
+            <Save size={15} /> Save workflows
+          </Button>
         </div>
       </div>
 
@@ -103,7 +184,7 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
       <div class="setting-group">
         <div class="setting-group-title">ComfyUI server</div>
         <p class="field-hint" style={{ marginTop: 0, marginBottom: 10 }}>
-          Image generation enables automatically when a base URL and a workflow are set. Toggle it per-tool on the Tools tab.
+          Image generation enables automatically when a base URL and at least one workflow are set. Toggle it per-tool on the Tools tab.
         </p>
         <Field
           label="ComfyUI base URL"
@@ -131,6 +212,58 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
             onInput={(e) => setComfy("pollIntervalMs", Number((e.target as HTMLInputElement).value) || 2000)}
           />
         </div>
+
+        {/* dynamic resolutions editor */}
+        <div class="setting-subgroup">
+          <div class="setting-subgroup-title">
+            Resolutions
+            <button type="button" class="icon-btn" onClick={addResolution} title="Add resolution" aria-label="Add resolution">
+              <Plus size={14} />
+            </button>
+          </div>
+          <p class="field-hint" style={{ marginTop: 0, marginBottom: 8 }}>
+            The LLM picks from these by name. The first one is the default. Names should be unique lowercase identifiers.
+          </p>
+          {comfyui.resolutions.map((r, i) => (
+            <div class="resolution-row" key={i}>
+              <input
+                class="field-input resolution-name"
+                type="text"
+                value={r.name}
+                placeholder="square"
+                onInput={(e) => setResolution(i, { name: (e.target as HTMLInputElement).value })}
+              />
+              <input
+                class="field-input resolution-dim"
+                type="number"
+                min="64"
+                value={String(r.width)}
+                onInput={(e) => setResolution(i, { width: Number((e.target as HTMLInputElement).value) || 0 })}
+                aria-label="Width"
+              />
+              <span class="resolution-x">x</span>
+              <input
+                class="field-input resolution-dim"
+                type="number"
+                min="64"
+                value={String(r.height)}
+                onInput={(e) => setResolution(i, { height: Number((e.target as HTMLInputElement).value) || 0 })}
+                aria-label="Height"
+              />
+              <button
+                type="button"
+                class="icon-btn danger"
+                onClick={() => removeResolution(i)}
+                title="Remove"
+                aria-label="Remove resolution"
+                disabled={comfyui.resolutions.length <= 1}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+
         <Toggle
           label="Randomize seeds"
           hint="Replaces every `seed` input in the workflow with a fresh random value per gen."

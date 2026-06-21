@@ -14,7 +14,7 @@ import { db } from "../../db";
 import { bots, characters, mcpServers, mcpTools } from "../../db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { botManager } from "../../bot/BotManager";
-import { newBotDefaults, ensureCharacter, resolveBotConfig } from "../../config/resolveBotConfig";
+import { newBotDefaults, ensureCharacter, resolveBotConfig, normalizeComfyui } from "../../config/resolveBotConfig";
 import { BUILTIN_COMMANDS } from "../../bot/commands";
 import { PROMPT_TEMPLATE } from "../../bot/prompt";
 import { newId, nowMs } from "../../db/ids";
@@ -60,9 +60,10 @@ function botRowToPublic(row: typeof bots.$inferSelect) {
     maxRecursionDepth: row.maxRecursionDepth,
     logLevel: row.logLevel,
     statusCfg: row.status,
-    comfyui: row.comfyui,
+    comfyui: normalizeComfyui(row.comfyui),
     websearch: row.websearch,
-    comfyuiWorkflowId: row.comfyuiWorkflowId,
+    comfyuiWorkflowIds: row.comfyuiWorkflowIds ?? [],
+    comfyuiDefaultWorkflowId: row.comfyuiDefaultWorkflowId,
     toolOverrides: row.toolOverrides ?? {},
     mcpServerIds: row.mcpServerIds ?? [],
     createdAt: row.createdAt.getTime(),
@@ -144,7 +145,7 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
         "randomResponseRate", "maxHistoryMessages", "maxContextTokens",
         "ignoreOtherBots", "replyToMentions", "addTimestamps", "addNothink",
         "enableUserStatus", "minResponseIntervalSeconds", "maxRecursionDepth", "logLevel",
-        "status", "comfyui", "websearch", "comfyuiWorkflowId",
+        "status", "comfyui", "websearch", "comfyuiWorkflowIds", "comfyuiDefaultWorkflowId",
         "toolOverrides", "mcpServerIds",
       ] as const;
       for (const k of keys) {
@@ -206,7 +207,8 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
         status: t.Optional(t.Record(t.String(), t.Unknown())),
         comfyui: t.Optional(t.Record(t.String(), t.Unknown())),
         websearch: t.Optional(t.Record(t.String(), t.Unknown())),
-        comfyuiWorkflowId: t.Optional(t.Union([t.String(), t.Null()])),
+        comfyuiWorkflowIds: t.Optional(t.Array(t.String())),
+        comfyuiDefaultWorkflowId: t.Optional(t.Union([t.String(), t.Null()])),
         toolOverrides: t.Optional(t.Record(t.String(), t.Record(t.String(), t.Unknown()))),
         mcpServerIds: t.Optional(t.Array(t.String())),
         logLevel: t.Optional(t.String()),

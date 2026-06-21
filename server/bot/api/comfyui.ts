@@ -1,7 +1,5 @@
-import type { ComfyUiConfig } from "../../../shared/types";
+import type { ComfyUiConfig, ComfyResolution } from "../../../shared/types";
 import type { Logger } from "../utils/logger";
-
-type Orientation = "portrait" | "square" | "landscape";
 
 interface WorkflowNode {
   inputs: Record<string, any>;
@@ -15,11 +13,21 @@ export interface GenerateImageResult {
   filename: string;
 }
 
+/** Resolve a resolution by name. Falls back to the first configured one. */
+function resolveResolution(config: ComfyUiConfig, name: string | undefined): ComfyResolution {
+  const list = config.resolutions;
+  if (name) {
+    const match = list.find((r) => r.name.toLowerCase() === name.toLowerCase());
+    if (match) return match;
+  }
+  return list[0] ?? { name: "square", width: 1024, height: 1024 };
+}
+
 export async function generateImage(
   config: ComfyUiConfig,
   log: Logger,
   prompt: string,
-  orientation: Orientation = "square",
+  orientation: string | undefined,
   workflowTemplate: Record<string, unknown> | null = null,
 ): Promise<GenerateImageResult> {
   const baseUrl = config.baseUrl.replace(/\/+$/, "");
@@ -93,7 +101,7 @@ function loadAndPrepareWorkflow(
   config: ComfyUiConfig,
   log: Logger,
   prompt: string,
-  orientation: Orientation,
+  orientation: string | undefined,
   workflowTemplate: Record<string, unknown> | null,
 ): { workflow: Record<string, WorkflowNode>; seed: number | null } {
   if (!workflowTemplate || typeof workflowTemplate !== "object") {
@@ -101,7 +109,7 @@ function loadAndPrepareWorkflow(
   }
   const cloned = structuredClone(workflowTemplate) as Record<string, WorkflowNode>;
 
-  const resolution = config.resolutions[orientation] ?? config.resolutions.square;
+  const resolution = resolveResolution(config, orientation);
   let promptReplaced = false;
   let resolutionReplaced = false;
   const randomSeed = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
@@ -121,8 +129,8 @@ function loadAndPrepareWorkflow(
       }
     }
     if ("width" in node.inputs && "height" in node.inputs) {
-      node.inputs.width = resolution[0];
-      node.inputs.height = resolution[1];
+      node.inputs.width = resolution.width;
+      node.inputs.height = resolution.height;
       resolutionReplaced = true;
     }
   }

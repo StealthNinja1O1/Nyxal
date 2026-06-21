@@ -98,31 +98,59 @@ export const crawlSiteCommand: CommandDef<
   },
 };
 
-type Orientation = "portrait" | "square" | "landscape";
-
-export const generateImageCommand: CommandDef<{ prompt: string; orientation?: Orientation }, AsyncCommandResult> = {
+export const generateImageCommand: CommandDef<
+  { prompt: string; orientation?: string; workflow?: string },
+  AsyncCommandResult
+> = {
   name: "generateImage",
-  args: { prompt: "string", orientation: "portrait | square | landscape (default: square)" },
+  args: {
+    prompt: "string",
+    orientation: "string (one of the available orientations, default: the first)",
+    workflow: "string (optional, one of the available workflow names, default: the default workflow)",
+  },
   description: `Generate an image using the image generator. Provide a descriptive prompt and choose orientation. The image will be sent as a follow-up message. Use Booru style tags like "1girl, smile, blue hair, medium breasts, cowboy shot, dark, simple background" etc. natural language does not work as well.`,
   kind: "async",
-  defaultEnabled: (config) => !!config.comfyui.baseUrl && !!config.comfyuiWorkflowId,
+  defaultEnabled: (config) => !!config.comfyui.baseUrl && config.comfyuiWorkflowIds.length > 0,
   execute: async (args, ctx) => {
-    const { prompt, orientation = "square" } = args as { prompt: string; orientation?: Orientation };
+    const { prompt, orientation, workflow } = args as {
+      prompt: string;
+      orientation?: string;
+      workflow?: string;
+    };
     if (!prompt || typeof prompt !== "string")
       return { success: false, message: "Invalid prompt argument for generateImage" };
-    const valid: Orientation[] = ["portrait", "square", "landscape"];
-    const safeOrientation: Orientation = valid.includes(orientation) ? orientation : "square";
+
+    // pick workflow by name (case-insensitive); fall back to default + warn.
+    let template = ctx.config.comfyuiDefaultWorkflow;
+    let workflowLabel = "(default)";
+    if (workflow) {
+      const match = ctx.config.comfyuiWorkflows.find(
+        (w) => w.name.toLowerCase() === workflow.toLowerCase(),
+      );
+      if (match) {
+        template = match.content;
+        workflowLabel = match.name;
+      } else {
+        ctx.log.warn(
+          `generateImage: unknown workflow "${workflow}", falling back to default. Available: ${ctx.config.comfyuiWorkflows.map((w) => w.name).join(", ") || "(none)"}`,
+        );
+      }
+    }
+
     try {
-      const result = await generateImage(ctx.config.comfyui, ctx.log, prompt, safeOrientation, ctx.config.comfyuiWorkflow);
+      const result = await generateImage(ctx.config.comfyui, ctx.log, prompt, orientation, template);
       return {
         success: true,
-        message: `Image generated (${safeOrientation}): "${prompt}"`,
+        message: `Image generated (orientation: ${orientation ?? "(default)"}, workflow: ${workflowLabel}): "${prompt}"`,
         attachment: { buffer: result.buffer, name: result.filename },
         prompt,
-        orientation: safeOrientation,
+        orientation: orientation ?? "(default)",
       };
     } catch (error) {
-      return { success: false, message: `Failed to generate image: ${error instanceof Error ? error.message : String(error)}` };
+      return {
+        success: false,
+        message: `Failed to generate image: ${error instanceof Error ? error.message : String(error)}`,
+      };
     }
   },
 };

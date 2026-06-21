@@ -1,7 +1,7 @@
 // entry editor modal. shared by the static lorebook + memory tabs.
 // edits a single entry's full field set.
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import { Save } from "lucide-react";
 import type { LorebookEntryWire, NewEntry } from "../api/lorebook-types";
 import { Modal } from "./Modal";
@@ -25,6 +25,7 @@ export function EntryEditor({ open, onClose, entry, newDefaults, onSave }: Props
   const [keysText, setKeysText] = useState("");
   const [secondaryText, setSecondaryText] = useState("");
   const [saving, setSaving] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -32,7 +33,34 @@ export function EntryEditor({ open, onClose, entry, newDefaults, onSave }: Props
     setDraft({ ...src });
     setKeysText((src.keys ?? []).join(", "));
     setSecondaryText((src.secondaryKeys ?? []).join(", "));
+    setConfirmDiscard(false);
   }, [open, entry]);
+
+  const pristine = entry ?? newDefaults;
+  const isDirty = useMemo(() => {
+    return (
+      draft.name !== pristine.name ||
+      draft.priority !== pristine.priority ||
+      draft.content !== pristine.content ||
+      draft.order !== pristine.order ||
+      draft.scanDepth !== pristine.scanDepth ||
+      draft.selectiveLogic !== pristine.selectiveLogic ||
+      draft.probability !== pristine.probability ||
+      draft.useProbability !== pristine.useProbability ||
+      draft.enabled !== pristine.enabled ||
+      draft.constant !== pristine.constant ||
+      draft.caseSensitive !== pristine.caseSensitive ||
+      draft.selective !== pristine.selective ||
+      parseList(keysText).join("\u0000") !== pristine.keys.join("\u0000") ||
+      parseList(secondaryText).join("\u0000") !== pristine.secondaryKeys.join("\u0000")
+    );
+  }, [draft, keysText, secondaryText, pristine]);
+
+  function requestClose() {
+    if (saving) return;
+    if (isDirty) setConfirmDiscard(true);
+    else onClose();
+  }
 
   if (!open) return null;
 
@@ -57,10 +85,10 @@ export function EntryEditor({ open, onClose, entry, newDefaults, onSave }: Props
       open
       size="lg"
       title={entry ? `Edit "${entry.name}"` : "New entry"}
-      onClose={onClose}
+      onClose={requestClose}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={saving}>
+          <Button variant="ghost" onClick={requestClose} disabled={saving}>
             Cancel
           </Button>
           <Button type="submit" form="entry-form" loading={saving} disabled={saving}>
@@ -71,6 +99,19 @@ export function EntryEditor({ open, onClose, entry, newDefaults, onSave }: Props
       }
     >
       <form id="entry-form" onSubmit={submit}>
+        {confirmDiscard && (
+          <div class="callout callout-warn" style={{ marginBottom: 12 }}>
+            <p style={{ margin: 0, marginBottom: 10 }}>You have unsaved changes. Discard them and close?</p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmDiscard(false)}>
+                Keep editing
+              </Button>
+              <Button size="sm" variant="danger" onClick={() => { setConfirmDiscard(false); onClose(); }}>
+                Discard
+              </Button>
+            </div>
+          </div>
+        )}
         <div class="setting-row-grid">
           <Field
             label="Name"

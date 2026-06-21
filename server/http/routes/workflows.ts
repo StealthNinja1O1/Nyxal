@@ -1,11 +1,12 @@
 // comfyui workflows CRUD. shared resource (like llm_providers) - bots reference
-// one via bots.comfyuiWorkflowId. the workflow JSON lives in `content`.
+// any number of them via bots.comfyuiWorkflowIds (JSON array); the default
+// one is bots.comfyuiDefaultWorkflowId. the workflow JSON lives in `content`.
 //
 // GET    /api/workflows           list
 // POST   /api/workflows           create
 // GET    /api/workflows/:id       get one (with full content)
 // PATCH  /api/workflows/:id       update name/description/content
-// DELETE /api/workflows/:id       delete (bots referencing it just get null)
+// DELETE /api/workflows/:id       delete (drops the id from any bot that referenced it)
 
 import { Elysia, t } from "elysia";
 import { db } from "../../db";
@@ -13,6 +14,12 @@ import { comfyuiWorkflows, bots } from "../../db/schema";
 import { eq } from "drizzle-orm";
 import { botManager } from "../../bot/BotManager";
 import { newId, nowMs } from "../../db/ids";
+
+/** Find bots that have `workflowId` in their comfyuiWorkflowIds array. */
+async function botsUsingWorkflow(workflowId: string) {
+  const all = await db.select().from(bots);
+  return all.filter((b) => (b.comfyuiWorkflowIds ?? []).includes(workflowId));
+}
 
 // list shape - omits the content blob
 function toList(row: typeof comfyuiWorkflows.$inferSelect) {
@@ -84,7 +91,7 @@ export const workflowsRoutes = new Elysia({ prefix: "/api/workflows" })
         .where(eq(comfyuiWorkflows.id, params.id));
 
       // hot-reload any running bot that uses this workflow
-      const usingBots = await db.select().from(bots).where(eq(bots.comfyuiWorkflowId, params.id));
+      const usingBots = await botsUsingWorkflow(params.id);
       for (const b of usingBots) {
         await botManager.refreshConfig(b.id).catch(() => {});
       }
@@ -107,10 +114,15 @@ export const workflowsRoutes = new Elysia({ prefix: "/api/workflows" })
       set.status = 404;
       return { error: "Workflow not found" };
     }
-    // null out the FK on any bot referencing it (don't block delete)
-    const usingBots = await db.select().from(bots).where(eq(bots.comfyuiWorkflowId, params.id));
+    // drop the id from any bot's comfyuiWorkflowIds array + clear default if it was it
+    const usingBots = await botsUsingWorkflow(params.id);
     for (const b of usingBots) {
-      await db.update(bots).set({ comfyuiWorkflowId: null, updatedAt: new Date(nowMs()) }).where(eq(bots.id, b.id));
+      const next = (b.comfyuiWorkflowIds ?? []).filter((id) => id !== params.id);
+      const nextDefault = b.comfyuiDefaultWorkflowId === params.id ? null : b.comfyuiDefaultWorkflowId;
+      await db
+        .update(bots)
+        .set({ comfyuiWorkflowIds: next, comfyuiDefaultWorkflowId: nextDefault, updatedAt: new Date(nowMs()) })
+        .where(eq(bots.id, b.id));
       await botManager.refreshConfig(b.id).catch(() => {});
     }
     await db.delete(comfyuiWorkflows).where(eq(comfyuiWorkflows.id, params.id));

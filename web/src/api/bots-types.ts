@@ -43,7 +43,8 @@ export interface Bot {
   statusCfg: BotStatusConfig;
   comfyui: ComfyUiConfig;
   websearch: WebSearchConfig;
-  comfyuiWorkflowId: string | null;
+  comfyuiWorkflowIds: string[];
+  comfyuiDefaultWorkflowId: string | null;
   toolOverrides: ToolOverrides;
   mcpServerIds: string[];
   createdAt: number;
@@ -87,7 +88,8 @@ export type BotPatch = Partial<{
   status: BotStatusConfig;
   comfyui: ComfyUiConfig;
   websearch: WebSearchConfig;
-  comfyuiWorkflowId: string | null;
+  comfyuiWorkflowIds: string[];
+  comfyuiDefaultWorkflowId: string | null;
   toolOverrides: ToolOverrides;
   mcpServerIds: string[];
 }>;

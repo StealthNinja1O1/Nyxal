@@ -18,10 +18,11 @@ export interface LorebookEntryWire {
   probability: number;
   useProbability: boolean;
   extensions: Record<string, unknown>;
+  updatedAt: number;
 }
 
-// shape sent to the create / import endpoints (no id). 
-export type NewEntry = Omit<LorebookEntryWire, "id">;
+// shape sent to the create / import endpoints (no id, no server-set updatedAt).
+export type NewEntry = Omit<LorebookEntryWire, "id" | "updatedAt">;
 
 export type Book = "static" | "memory";
 

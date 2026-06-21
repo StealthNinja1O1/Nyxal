@@ -62,33 +62,49 @@ export function buildRegistry(extraDefs: CommandDef<any>[] = []): CommandRegistr
   return registry;
 }
 
+/**
+ * Build a per-config description for generateImage that lists the actual
+ * resolutions + workflows the bot has. Appended to the base description so
+ * the LLM knows what to pass for orientation + workflow.
+ */
+function describeGenerateImage(config: BotRuntimeConfig, base: string): string {
+  const resList = config.comfyui.resolutions.map((r) => `${r.name} (${r.width}x${r.height})`).join(", ");
+  const defaultRes = config.comfyui.resolutions[0]?.name ?? "(none)";
+  const lines = [base];
+  if (resList) {
+    lines.push(`Available orientations: ${resList}. Default: ${defaultRes}.`);
+  }
+  if (config.comfyuiWorkflows.length > 0) {
+    const wfList = config.comfyuiWorkflows
+      .map((w) => (w.id === config.comfyuiDefaultWorkflowId ? `"${w.name}" (default)` : `"${w.name}"`))
+      .join(", ");
+    lines.push(`Available workflows: ${wfList}. Pass workflow="<name>" to use a non-default one.`);
+  }
+  return lines.join("\n");
+}
+
 // commands to advertise in the system prompt (only enabled ones after
 // applying per-bot overrides). builtins only - MCP tools are merged into
 // the live registry on the bot and re-advertised from there.
-export function availableCommands(
-  config: BotRuntimeConfig,
-  overrides: ToolOverrides = {},
-): Record<string, unknown>[] {
+export function availableCommands(config: BotRuntimeConfig, overrides: ToolOverrides = {}): Record<string, unknown>[] {
   const registry = buildRegistry();
-  return registry
-    .enabledCommands(config, overrides)
-    .map((c) => {
-      const o = overrides[c.name];
-      const out: Record<string, unknown> = {
-        name: c.name,
-        args: c.args,
-        description: o?.description ?? c.description,
-        enabled: true,
-      };
-      if (c.kind === "recursive") out.isRecursive = true;
-      return out;
-    });
+  return registry.enabledCommands(config, overrides).map((c) => {
+    const o = overrides[c.name];
+    let description = o?.description ?? c.description;
+    if (c.name === "generateImage" && !o?.description) description = describeGenerateImage(config, c.description);
+
+    const out: Record<string, unknown> = {
+      name: c.name,
+      args: c.args,
+      description,
+      enabled: true,
+    };
+    if (c.kind === "recursive") out.isRecursive = true;
+    return out;
+  });
 }
 
-export function recursiveCommandNames(
-  config: BotRuntimeConfig,
-  overrides: ToolOverrides = {},
-): string[] {
+export function recursiveCommandNames(config: BotRuntimeConfig, overrides: ToolOverrides = {}): string[] {
   return buildRegistry().recursiveNames(config, overrides);
 }
 
@@ -101,17 +117,18 @@ export function availableCommandsFromRegistry(
   config: BotRuntimeConfig,
   overrides: ToolOverrides = {},
 ): Record<string, unknown>[] {
-  return registry
-    .enabledCommands(config, overrides)
-    .map((c) => {
-      const o = overrides[c.name];
-      const out: Record<string, unknown> = {
-        name: c.name,
-        args: c.args,
-        description: o?.description ?? c.description,
-        enabled: true,
-      };
-      if (c.kind === "recursive") out.isRecursive = true;
-      return out;
-    });
+  return registry.enabledCommands(config, overrides).map((c) => {
+    const o = overrides[c.name];
+    let description = o?.description ?? c.description;
+    if (c.name === "generateImage" && !o?.description) description = describeGenerateImage(config, c.description);
+
+    const out: Record<string, unknown> = {
+      name: c.name,
+      args: c.args,
+      description,
+      enabled: true,
+    };
+    if (c.kind === "recursive") out.isRecursive = true;
+    return out;
+  });
 }

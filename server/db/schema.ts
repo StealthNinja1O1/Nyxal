@@ -66,7 +66,16 @@ export const bots = sqliteTable("bots", {
   visionModel: text("vision_model"),
   enableVision: integer("enable_vision", { mode: "boolean" }).notNull().default(false),
 
-  // comfyui workflow (shared resource, resolved via FK). nullable = none assigned.
+  // comfyui workflows (shared resources, resolved via FK). array of workflow
+  // ids this bot can use
+  comfyuiWorkflowIds: text("comfyui_workflow_ids", { mode: "json" })
+    .$type<string[]>()
+    .notNull()
+    .default([]),
+  comfyuiDefaultWorkflowId: text("comfyui_default_workflow_id").references(() => comfyuiWorkflows.id),
+
+  // LEGACY single-workflow column. kept in the schema so drizzle never generates a
+  // DROP COLUMN migration. safe to ignore. - I hate SQL btw, mongoftw
   comfyuiWorkflowId: text("comfyui_workflow_id").references(() => comfyuiWorkflows.id),
 
   // behavior / context (all hot-reloadable)

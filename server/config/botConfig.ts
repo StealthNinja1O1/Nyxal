@@ -7,6 +7,7 @@ import type {
   ComfyUiConfig,
   WebSearchConfig,
   ToolOverrides,
+  ComfyResolvedWorkflow,
 } from "../../shared/types";
 
 export interface BotRuntimeConfig {
@@ -53,10 +54,10 @@ export interface BotRuntimeConfig {
   toolOverrides: ToolOverrides;
   mcpServerIds: string[];
 
-  // assigned comfyui workflow id (nullable = none assigned).
-  comfyuiWorkflowId: string | null;
-  // the resolved workflow JSON for the assigned workflow, or null.
-  comfyuiWorkflow: Record<string, unknown> | null;
+  comfyuiWorkflowIds: string[];
+  comfyuiDefaultWorkflowId: string | null;
+  comfyuiWorkflows: ComfyResolvedWorkflow[];
+  comfyuiDefaultWorkflow: Record<string, unknown> | null;
 }
 
 export const DEFAULT_STATUS: BotStatusConfig = {
@@ -76,11 +77,11 @@ export const DEFAULT_COMFYUI: ComfyUiConfig = {
   randomizeSeeds: true,
   stripMetadata: true,
   includePromptInMessage: false,
-  resolutions: {
-    square: [1280, 1280],
-    portrait: [1008, 1280],
-    landscape: [1280, 1008],
-  },
+  resolutions: [
+    { name: "square", width: 1280, height: 1280 },
+    { name: "portrait", width: 1008, height: 1280 },
+    { name: "landscape", width: 1280, height: 1008 },
+  ],
 };
 
 export const DEFAULT_WEBSEARCH: WebSearchConfig = {

@@ -20,6 +20,9 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
   const [visionModel, setVisionModel] = useState(bot.visionModel ?? "");
   const [channelIds, setChannelIds] = useState(bot.channelIds.join(", "));
   const [allowedUserIds, setAllowedUserIds] = useState(bot.allowedUserIds.join(", "));
+  const [mentionTriggerAllowedUserIds, setMentionTriggerAllowedUserIds] = useState(
+    bot.mentionTriggerAllowedUserIds.join(", "),
+  );
   const [triggerKeywords, setTriggerKeywords] = useState(bot.triggerKeywords.join(", "));
   const [randomRate, setRandomRate] = useState(bot.randomResponseRate);
   const [maxHistory, setMaxHistory] = useState(bot.maxHistoryMessages);
@@ -28,10 +31,9 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
   const [maxRecursion, setMaxRecursion] = useState(bot.maxRecursionDepth);
   const [logLevel, setLogLevel] = useState(bot.logLevel);
 
-  // presence / activity blob (status) - edited in its own section, saved
-  // separately from the main behavior patch since it's a nested blob.
+  // presence / activity blob (status) - saved together with the rest of
+  // behavior in the single unified save() call.
   const [status, setStatus] = useState<BotStatusConfig>(bot.statusCfg);
-  const [savingStatus, setSavingStatus] = useState(false);
 
   const [toggles, setToggles] = useState({
     ignoreOtherBots: bot.ignoreOtherBots,
@@ -72,6 +74,7 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
       enableVision: toggles.enableVision,
       channelIds: parseIds(channelIds),
       allowedUserIds: parseIds(allowedUserIds),
+      mentionTriggerAllowedUserIds: parseIds(mentionTriggerAllowedUserIds),
       triggerKeywords: parseList(triggerKeywords),
       randomResponseRate: randomRate,
       maxHistoryMessages: maxHistory,
@@ -84,6 +87,7 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
       addTimestamps: toggles.addTimestamps,
       addNothink: toggles.addNothink,
       enableUserStatus: toggles.enableUserStatus,
+      status,
     };
     if (token.trim()) patch.discordToken = token.trim();
 
@@ -93,12 +97,6 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
       setRestartRequired(result.restartRequired);
       setRestartReasons(result.reasons);
     }
-  }
-
-  async function saveStatus() {
-    setSavingStatus(true);
-    await updateBot(bot.id, { status }, { silent: true });
-    setSavingStatus(false);
   }
 
   async function doRestart() {
@@ -270,6 +268,13 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
             hint="Users allowed to run slash commands."
           />
         </div>
+        <Field
+          label="Always-trigger user IDs (comma separated)"
+          name="mentionTriggerAllowedUserIds"
+          value={mentionTriggerAllowedUserIds}
+          onInput={(e) => setMentionTriggerAllowedUserIds((e.target as HTMLInputElement).value)}
+          hint="These users always trigger replies, bypassing reply-to-mentions=false and the per-channel cooldown."
+        />
         <Toggle
           label="Reply to mentions"
           hint="Respond when mentioned or when the character name is said."
@@ -441,12 +446,6 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
             <option value="invisible">invisible</option>
           </select>
           <p class="field-hint">Discord presence color while disabled.</p>
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-          <Button onClick={saveStatus} loading={savingStatus} disabled={savingStatus}>
-            <Save size={15} /> Save presence
-          </Button>
         </div>
       </div>
     </div>

@@ -42,6 +42,13 @@ export interface BotStatusConfig {
   disabledStatus: string;
 }
 
+export interface ComfyResolution {
+  /** Lowercase identifier the LLM passes back, e.g. "square", "wide". */
+  name: string;
+  width: number;
+  height: number;
+}
+
 export interface ComfyUiConfig {
   baseUrl: string;
   timeoutSeconds: number;
@@ -49,11 +56,16 @@ export interface ComfyUiConfig {
   randomizeSeeds: boolean;
   stripMetadata: boolean;
   includePromptInMessage: boolean;
-  resolutions: {
-    square: [number, number];
-    portrait: [number, number];
-    landscape: [number, number];
-  };
+  /** Ordered list of resolutions the LLM can pick from. Order = display + default-first. */
+  resolutions: ComfyResolution[];
+}
+
+/** Minimal workflow shape the runtime needs (resolved from comfyui_workflows rows). */
+export interface ComfyResolvedWorkflow {
+  id: string;
+  name: string;
+  description: string;
+  content: Record<string, unknown>;
 }
 
 /** A ComfyUI workflow node (minimal shape for the text editor). */

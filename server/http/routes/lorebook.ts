@@ -40,6 +40,7 @@ export interface EntryWire {
   probability: number;
   useProbability: boolean;
   extensions: Record<string, unknown>;
+  updatedAt: number;
 }
 
 function rowToWire(row: typeof staticLorebookEntries.$inferSelect): EntryWire {
@@ -60,10 +61,11 @@ function rowToWire(row: typeof staticLorebookEntries.$inferSelect): EntryWire {
     probability: row.probability,
     useProbability: row.useProbability,
     extensions: row.extensions,
+    updatedAt: row.updatedAt.getTime(),
   };
 }
 
-function wireToBookEntry(e: Omit<EntryWire, "id">): CharacterBookEntry {
+function wireToBookEntry(e: Omit<EntryWire, "id" | "updatedAt">): CharacterBookEntry {
   return {
     name: e.name,
     keys: e.keys,
