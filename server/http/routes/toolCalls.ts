@@ -35,7 +35,15 @@ export const toolCallRoutes = new Elysia({ prefix: "/api/tool-calls" })
       if (before != null && Number.isFinite(before)) conds.push(lt(toolCallLog.id, before));
       if (query.q) {
         const needle = `%${query.q}%`;
-        conds.push(or(like(sql`CAST(${toolCallLog.args} AS TEXT)`, needle), like(toolCallLog.errorMessage, needle)));
+
+        conds.push(
+          or(
+            like(sql`CAST(${toolCallLog.args} AS TEXT)`, needle),
+            like(toolCallLog.errorMessage, needle),
+            like(toolCallLog.channelId, needle),
+            like(toolCallLog.messageId, needle),
+          ),
+        );
       }
 
       const rows = await db

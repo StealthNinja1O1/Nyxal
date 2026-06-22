@@ -32,7 +32,18 @@ export async function logToolCall<T>(
   let success = true;
   let errorMessage: string | undefined;
   try {
-    return await fn();
+    const result = await fn();
+    if (
+      result !== null &&
+      typeof result === "object" &&
+      "success" in result &&
+      (result as { success: unknown }).success === false
+    ) {
+      success = false;
+      const msg = (result as { message?: unknown }).message;
+      errorMessage = typeof msg === "string" ? msg : "(command returned success=false)";
+    }
+    return result;
   } catch (err) {
     success = false;
     errorMessage = err instanceof Error ? err.message : String(err);

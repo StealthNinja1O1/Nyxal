@@ -135,7 +135,7 @@ export function ToolCallsRoute() {
             <input
               class="logs-search"
               type="search"
-              placeholder="Search args / errors..."
+              placeholder="Search args, errors, Discord IDs..."
               value={search}
               onInput={(e) => setSearch((e.target as HTMLInputElement).value)}
             />

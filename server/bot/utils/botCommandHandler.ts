@@ -37,12 +37,24 @@ export async function executeInstantCommands(
   for (const cmd of commands) {
     const def = registry.get(cmd.name);
     if (!def || def.kind !== "instant") {
-      if (def && def.kind === "recursive") {
-        results.push({
-          success: false,
-          message: `${cmd.name} should be handled by the recursion loop (max depth reached or not enabled)`,
-        });
-      } else results.push({ success: false, message: `Unknown command: ${cmd.name}` });
+      const reason = !def
+        ? `Unknown command: ${cmd.name}`
+        : `${cmd.name} should be handled by the recursion loop (max depth reached or not enabled)`;
+      // log the dispatch failure so it shows up in tool_call_log too. 
+      await logToolCall(
+        cmd.name,
+        "instant",
+        cmd.args as Record<string, unknown>,
+        {
+          botId: context.execCtx.botId,
+          channelId: context.message?.channelId ?? null,
+          messageId: context.message?.id ?? null,
+        },
+        async () => {
+          throw new Error(reason);
+        },
+      ).catch(() => {});
+      results.push({ success: false, message: reason });
       continue;
     }
     try {
@@ -77,7 +89,22 @@ export async function executeAsyncCommands(
   for (const cmd of commands) {
     const def = registry.get(cmd.name);
     if (!def || def.kind !== "async") {
-      results.push({ success: false, message: `Unknown async command: ${cmd.name}` });
+      const reason = `Unknown async command: ${cmd.name}`;
+      // mirror the instant path: log the dispatch failure, then swallow rethrow.
+      await logToolCall(
+        cmd.name,
+        "async",
+        cmd.args as Record<string, unknown>,
+        {
+          botId: context.execCtx.botId,
+          channelId: context.message?.channelId ?? null,
+          messageId: context.message?.id ?? null,
+        },
+        async () => {
+          throw new Error(reason);
+        },
+      ).catch(() => {});
+      results.push({ success: false, message: reason });
       continue;
     }
     try {
