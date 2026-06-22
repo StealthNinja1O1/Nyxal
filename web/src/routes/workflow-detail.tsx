@@ -11,6 +11,7 @@ import type { ComfyWorkflow, ComfyWorkflowNode } from "@shared/types";
 import { Button } from "../components/Button";
 import { Field } from "../components/Field";
 import { TextArea } from "../components/TextArea";
+import { Toggle } from "../components/Toggle";
 import { LoadingState } from "../components/State";
 import { updateWorkflowMeta, updateWorkflowContent } from "../state/workflows";
 
@@ -43,6 +44,86 @@ function extractTextNodes(content: Record<string, ComfyWorkflowNode>): TextNodeR
     if (a.isPrompt !== b.isPrompt) return a.isPrompt ? -1 : 1;
     return a.title.localeCompare(b.title);
   });
+  return rows;
+}
+
+interface LoraEntry {
+  key: string; // "lora_1"
+  name: string; // lora filename
+  on: boolean;
+  strength: number;
+}
+
+interface LoraLoaderRow {
+  nodeId: string;
+  title: string;
+  classType: string;
+  loras: LoraEntry[];
+}
+
+interface PrimitiveRow {
+  nodeId: string;
+  title: string;
+  classType: string;
+  kind: "int" | "float" | "boolean";
+  value: number | boolean;
+}
+
+/**
+ * find Power Lora Loader (rgthree) nodes and collect each lora_N entry.
+ * skips the header widget + "Add Lora" placeholder + connection arrays.
+ */
+function extractLoraLoaders(content: Record<string, ComfyWorkflowNode>): LoraLoaderRow[] {
+  const rows: LoraLoaderRow[] = [];
+  for (const [nodeId, node] of Object.entries(content)) {
+    if (node?.class_type !== "Power Lora Loader (rgthree)") continue;
+    const inputs = node?.inputs;
+    if (!inputs || typeof inputs !== "object") continue;
+    const loras: LoraEntry[] = [];
+    for (const [key, val] of Object.entries(inputs)) {
+      if (!/^lora_\d+$/.test(key)) continue;
+      if (!val || typeof val !== "object") continue;
+      const v = val as Record<string, unknown>;
+      if (typeof v.lora !== "string") continue;
+      loras.push({
+        key,
+        name: v.lora,
+        on: v.on === true,
+        strength: typeof v.strength === "number" ? v.strength : 1,
+      });
+    }
+    if (loras.length === 0) continue;
+    rows.push({
+      nodeId,
+      title: node?._meta?.title || nodeId,
+      classType: node?.class_type || "(unknown)",
+      loras,
+    });
+  }
+  rows.sort((a, b) => a.title.localeCompare(b.title));
+  return rows;
+}
+
+/**
+ * find PrimitiveInt / PrimitiveFloat / PrimitiveBoolean nodes with a scalar
+ * `value` input. these are the comfy "quick switches" people wire up for
+ * runtime tweaks.
+ */
+function extractPrimitives(content: Record<string, ComfyWorkflowNode>): PrimitiveRow[] {
+  const rows: PrimitiveRow[] = [];
+  for (const [nodeId, node] of Object.entries(content)) {
+    const ct = node?.class_type;
+    const v = (node?.inputs as Record<string, unknown> | undefined)?.value;
+    const title = node?._meta?.title || nodeId;
+    if (ct === "PrimitiveBoolean" && typeof v === "boolean") {
+      rows.push({ nodeId, title, classType: ct, kind: "boolean", value: v });
+    } else if (ct === "PrimitiveInt" && typeof v === "number" && Number.isFinite(v)) {
+      rows.push({ nodeId, title, classType: ct, kind: "int", value: v });
+    } else if (ct === "PrimitiveFloat" && typeof v === "number" && Number.isFinite(v)) {
+      rows.push({ nodeId, title, classType: ct, kind: "float", value: v });
+    }
+  }
+  rows.sort((a, b) => a.title.localeCompare(b.title));
   return rows;
 }
 
@@ -88,6 +169,9 @@ export function WorkflowDetailRoute() {
     );
 
   const textRows = extractTextNodes(content);
+  const loraRows = extractLoraLoaders(content);
+  const primitiveRows = extractPrimitives(content);
+  const totalEdits = textRows.length + loraRows.length + primitiveRows.length;
   const promptCount = textRows.filter((r) => r.isPrompt).length;
 
   function setText(nodeId: string, value: string) {
@@ -110,6 +194,26 @@ export function WorkflowDetailRoute() {
       }
       const node = next[nodeId];
       if (node?.inputs) (node.inputs as Record<string, unknown>).text = "<PROMPT>";
+      return next;
+    });
+  }
+
+  function setLoraField(nodeId: string, key: string, field: "on" | "strength", value: boolean | number) {
+    setContent((c) => {
+      const next = structuredClone(c);
+      const entry = (next[nodeId]?.inputs as Record<string, unknown> | undefined)?.[key];
+      if (entry && typeof entry === "object") {
+        (entry as Record<string, unknown>)[field] = value;
+      }
+      return next;
+    });
+  }
+
+  function setPrimitiveValue(nodeId: string, value: number | boolean) {
+    setContent((c) => {
+      const next = structuredClone(c);
+      const node = next[nodeId];
+      if (node?.inputs) (node.inputs as Record<string, unknown>).value = value;
       return next;
     });
   }
@@ -162,21 +266,9 @@ export function WorkflowDetailRoute() {
       <div class="workflow-editor">
         <div class="workflow-editor-header">
           <div>
-            <h3 style={{ margin: 0 }}>Text nodes</h3>
+            <h3 style={{ margin: 0 }}>Nodes</h3>
             <p class="field-hint" style={{ margin: "4px 0 0" }}>
-              {textRows.length} text node{textRows.length === 1 ? "" : "s"} found.
-              {" "}
-              {promptCount === 1 ? (
-                <span style={{ color: "var(--ok)" }}>
-                  <CheckCircle2 size={12} style={{ verticalAlign: "middle" }} /> Prompt node set.
-                </span>
-              ) : promptCount === 0 ? (
-                <span style={{ color: "var(--warn)" }}>
-                  <AlertCircle size={12} style={{ verticalAlign: "middle" }} /> No prompt node. Click "Use as prompt" on one.
-                </span>
-              ) : (
-                <span style={{ color: "var(--warn)" }}>{promptCount} prompt nodes (only the first is used).</span>
-              )}
+              Edit text, loras, and primitive values inline. Changes apply on save.
             </p>
           </div>
           <Button onClick={saveContent} loading={savingContent} disabled={savingContent}>
@@ -184,39 +276,159 @@ export function WorkflowDetailRoute() {
           </Button>
         </div>
 
-        {textRows.length === 0 ? (
+        {totalEdits === 0 ? (
           <div class="empty-text-nodes">
-            <p>No text nodes in this workflow.</p>
+            <p>No editable nodes in this workflow.</p>
             <p class="field-hint">
-              Either upload a real ComfyUI workflow JSON, or this workflow has no `text` inputs to edit.
+              Either upload a real ComfyUI workflow JSON, or this workflow has no text inputs, lora loaders, or primitives.
             </p>
           </div>
         ) : (
-          <div class="text-node-list">
-            {textRows.map((row) => (
-              <div key={row.nodeId} class={`text-node-row ${row.isPrompt ? "is-prompt" : ""}`}>
-                <div class="text-node-meta">
-                  <span class="text-node-id">#{row.nodeId}</span>
-                  <span class="text-node-title">{row.title}</span>
-                  <span class="text-node-class">{row.classType}</span>
-                  {row.isPrompt && <span class="text-node-badge">PROMPT</span>}
+          <>
+            {textRows.length > 0 && (
+              <div class="workflow-section">
+                <div class="workflow-section-title">
+                  Text nodes <span class="section-count">{textRows.length}</span>
+                  {promptCount === 1 ? (
+                    <span class="section-ok">
+                      <CheckCircle2 size={12} /> Prompt node set.
+                    </span>
+                  ) : promptCount === 0 ? (
+                    <span class="section-warn">
+                      <AlertCircle size={12} /> No prompt node. Click "Use as prompt" on one.
+                    </span>
+                  ) : (
+                    <span class="section-warn">{promptCount} prompt nodes (only the first is used).</span>
+                  )}
                 </div>
-                <TextArea
-                  label=""
-                  name={`text-${row.nodeId}`}
-                  value={row.text}
-                  onInput={(e) => setText(row.nodeId, (e.target as HTMLTextAreaElement).value)}
-                  rows={row.text.length > 80 ? 3 : 1}
-                  mono
-                />
-                {!row.isPrompt && (
-                  <Button variant="ghost" size="sm" onClick={() => setAsPrompt(row.nodeId)}>
-                    Use as prompt
-                  </Button>
-                )}
+                <div class="text-node-list">
+                  {textRows.map((row) => (
+                    <div key={row.nodeId} class={`text-node-row ${row.isPrompt ? "is-prompt" : ""}`}>
+                      <div class="text-node-meta">
+                        <span class="text-node-id">#{row.nodeId}</span>
+                        <span class="text-node-title">{row.title}</span>
+                        <span class="text-node-class">{row.classType}</span>
+                        {row.isPrompt && <span class="text-node-badge">PROMPT</span>}
+                      </div>
+                      <TextArea
+                        label=""
+                        name={`text-${row.nodeId}`}
+                        value={row.text}
+                        onInput={(e) => setText(row.nodeId, (e.target as HTMLTextAreaElement).value)}
+                        rows={row.text.length > 80 ? 3 : 1}
+                        mono
+                      />
+                      {!row.isPrompt && (
+                        <Button variant="ghost" size="sm" onClick={() => setAsPrompt(row.nodeId)}>
+                          Use as prompt
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
+            )}
+
+            {loraRows.length > 0 && (
+              <div class="workflow-section">
+                <div class="workflow-section-title">
+                  Lora loaders <span class="section-count">{loraRows.length}</span>
+                  <span class="section-hint">Toggle on/off and tune strength per lora.</span>
+                </div>
+                <div class="text-node-list">
+                  {loraRows.map((row) => (
+                    <div key={row.nodeId} class="text-node-row">
+                      <div class="text-node-meta">
+                        <span class="text-node-id">#{row.nodeId}</span>
+                        <span class="text-node-title">{row.title}</span>
+                        <span class="text-node-class">{row.classType}</span>
+                        <span class="text-node-badge-muted">
+                          {row.loras.length} lora{row.loras.length === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      <div class="lora-entry-list">
+                        {row.loras.map((lora) => (
+                          <div key={lora.key} class={`lora-entry ${lora.on ? "" : "is-off"}`}>
+                            <Toggle
+                              bare
+                              checked={lora.on}
+                              onChange={(v) => setLoraField(row.nodeId, lora.key, "on", v)}
+                            />
+                            <span class="lora-name" title={lora.name}>{lora.name}</span>
+                            <input
+                              type="range"
+                              class="lora-slider"
+                              min={-1}
+                              max={2}
+                              step={0.05}
+                              value={lora.strength}
+                              onInput={(e) =>
+                                setLoraField(
+                                  row.nodeId,
+                                  lora.key,
+                                  "strength",
+                                  Number((e.target as HTMLInputElement).value),
+                                )
+                              }
+                            />
+                            <input
+                              type="number"
+                              class="field-input lora-strength-input"
+                              step={0.05}
+                              value={lora.strength}
+                              onInput={(e) => {
+                                const n = Number((e.target as HTMLInputElement).value);
+                                if (Number.isFinite(n)) setLoraField(row.nodeId, lora.key, "strength", n);
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {primitiveRows.length > 0 && (
+              <div class="workflow-section">
+                <div class="workflow-section-title">
+                  Primitive values <span class="section-count">{primitiveRows.length}</span>
+                  <span class="section-hint">Quick switches for ints, floats, and booleans.</span>
+                </div>
+                <div class="text-node-list">
+                  {primitiveRows.map((row) => (
+                    <div key={row.nodeId} class="text-node-row">
+                      <div class="text-node-meta">
+                        <span class="text-node-id">#{row.nodeId}</span>
+                        <span class="text-node-title">{row.title}</span>
+                        <span class="text-node-class">{row.classType}</span>
+                      </div>
+                      {row.kind === "boolean" ? (
+                        <Toggle
+                          label="Value"
+                          checked={row.value as boolean}
+                          onChange={(v) => setPrimitiveValue(row.nodeId, v)}
+                        />
+                      ) : (
+                        <Field
+                          label="Value"
+                          name={`prim-${row.nodeId}`}
+                          type="number"
+                          step={row.kind === "int" ? "1" : "0.01"}
+                          value={String(row.value)}
+                          onInput={(e) => {
+                            const n = Number((e.target as HTMLInputElement).value);
+                            if (Number.isFinite(n)) setPrimitiveValue(row.nodeId, n);
+                          }}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </section>
