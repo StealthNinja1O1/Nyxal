@@ -117,6 +117,53 @@ a { color: inherit; text-decoration: none; }
   font-family: var(--mono);
 }
 
+/* version chip in the sidebar footer. status dot + label, links to /settings. */
+.version-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-family: var(--mono);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  text-align: left;
+}
+.version-chip:hover { background: var(--panel-hover); color: var(--text-dim); }
+.version-chip.update { color: var(--accent); border-color: var(--accent-ring); background: var(--accent-soft); }
+.version-chip.update:hover { background: color-mix(in srgb, var(--accent-soft) 80%, var(--panel-hover)); }
+.version-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  flex-shrink: 0;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.version-chip.ok .version-dot {
+  background: var(--ok);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--ok) 60%, transparent);
+}
+.version-chip.update .version-dot {
+  background: var(--accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent);
+  animation: version-pulse 1.6s ease-in-out infinite;
+}
+.version-chip.unknown .version-dot { background: var(--text-faint); opacity: 0.6; }
+.version-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@keyframes version-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
 .main { display: flex; flex-direction: column; min-width: 0; }
 
 .topbar {
@@ -1746,9 +1793,108 @@ select.field-input option {
 }
 .settings-about-row:last-child { border-bottom: none; }
 .settings-about-key { color: var(--text-dim); }
-.settings-about-val { color: var(--text); font-family: var(--mono); font-size: 12px; }
+.settings-about-val {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  text-align: right;
+}
 .settings-about-val a { color: var(--accent-hover); }
 .settings-about-val a:hover { color: var(--accent); }
+.settings-about-val .mono { font-family: var(--mono); }
+
+/* inline status badge in the about section */
+.about-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.about-status-ok {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+}
+.about-status-update {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-ring);
+}
+.about-status-unknown {
+  color: var(--text-faint);
+  background: transparent;
+  font-style: italic;
+}
+
+/* download card grid for release assets */
+.version-downloads {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.version-downloads-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 10px;
+}
+.version-downloads-title svg { color: var(--accent); }
+.version-downloads-version {
+  margin-left: auto;
+  font-family: var(--mono);
+  color: var(--text-faint);
+  text-transform: none;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.version-asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+.version-asset-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  text-decoration: none;
+  transition: border-color 0.12s, background 0.12s, transform 0.08s;
+}
+.version-asset-card:hover {
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+.version-asset-card:active { transform: translateY(1px); }
+.version-asset-label { flex: 1; font-weight: 500; }
+.version-asset-size {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.version-asset-icon { color: var(--text-faint); flex-shrink: 0; }
+.version-asset-card:hover .version-asset-icon { color: var(--accent); }
+.version-asset-card:hover .version-asset-size { color: var(--accent-hover); }
 
 
 /* ---- tools tab + MCP page ---- */

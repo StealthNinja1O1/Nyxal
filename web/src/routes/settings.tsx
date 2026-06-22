@@ -1,14 +1,20 @@
 import { useEffect, useState } from "preact/hooks";
-import { Save, Github, Info } from "lucide-react";
+import { Save, Github, Info, Download, ArrowUpCircle, CheckCircle2, RefreshCw } from "lucide-react";
 import { settingsApi, type Settings } from "../api/settings";
 import { toast } from "../state/toast";
 import { Button } from "../components/Button";
 import { Field } from "../components/Field";
 import { LoadingState } from "../components/State";
 import { Callout } from "../components/Callout";
+import { versionInfo, versionStatus, loadVersionInfo } from "../state/version";
 
-export const VERSION = "0.1.5";
 const GITHUB_URL = "https://github.com/StealthNinja1O1/Nyxal";
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export function SettingsRoute() {
   const [loading, setLoading] = useState(true);
@@ -19,6 +25,7 @@ export function SettingsRoute() {
   const [defaultLevel, setDefaultLevel] = useState("INFO");
 
   useEffect(() => {
+    void loadVersionInfo();
     void (async () => {
       try {
         const s = await settingsApi.list();
@@ -147,6 +154,15 @@ export function SettingsRoute() {
       <section>
         <div class="section-head">
           <h2>About</h2>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void loadVersionInfo()}
+            title="Re-check for updates"
+          >
+            <RefreshCw size={14} />
+            Check for updates
+          </Button>
         </div>
         <div class="settings-about">
           <div class="settings-about-row">
@@ -154,9 +170,46 @@ export function SettingsRoute() {
             <span class="settings-about-val">Nyxal</span>
           </div>
           <div class="settings-about-row">
-            <span class="settings-about-key">Version</span>
-            <span class="settings-about-val">v{VERSION}</span>
+            <span class="settings-about-key">Installed version</span>
+            <span class="settings-about-val">
+              <span class="mono">v{versionInfo.value?.current ?? "..."}</span>
+              {versionStatus.value === "ok" && (
+                <span class="about-status about-status-ok">
+                  <CheckCircle2 size={13} />
+                  Up to date
+                </span>
+              )}
+            </span>
           </div>
+          <div class="settings-about-row">
+            <span class="settings-about-key">Latest release</span>
+            <span class="settings-about-val">
+              {versionInfo.value?.latest ? (
+                <>
+                  <span class="mono">v{versionInfo.value.latest}</span>
+                  {versionStatus.value === "update" && (
+                    <span class="about-status about-status-update">
+                      <ArrowUpCircle size={13} />
+                      Update available
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span class="about-status about-status-unknown">Checking...</span>
+              )}
+            </span>
+          </div>
+          {versionInfo.value?.releaseUrl && (
+            <div class="settings-about-row">
+              <span class="settings-about-key">Release notes</span>
+              <span class="settings-about-val">
+                <a href={versionInfo.value.releaseUrl} target="_blank" rel="noreferrer">
+                  <Github size={13} style={{ verticalAlign: "middle", marginRight: 4 }} />
+                  {versionInfo.value.latest ? `v${versionInfo.value.latest} changelog` : "latest release"}
+                </a>
+              </span>
+            </div>
+          )}
           <div class="settings-about-row">
             <span class="settings-about-key">Source</span>
             <span class="settings-about-val">
@@ -167,6 +220,41 @@ export function SettingsRoute() {
             </span>
           </div>
         </div>
+
+        {versionInfo.value && versionInfo.value.assets.length > 0 && (
+          <div class="version-downloads">
+            <div class="version-downloads-title">
+              <Download size={14} />
+              Download{versionStatus.value === "update" ? " update" : ""}
+              {versionInfo.value.latest && (
+                <span class="version-downloads-version">v{versionInfo.value.latest}</span>
+              )}
+            </div>
+            <div class="version-asset-grid">
+              {versionInfo.value.assets.map((a) => (
+                <a
+                  key={a.name}
+                  class="version-asset-card"
+                  href={a.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <span class="version-asset-label">{a.label}</span>
+                  <span class="version-asset-size">{formatBytes(a.size)}</span>
+                  <Download size={14} class="version-asset-icon" />
+                </a>
+              ))}
+            </div>
+            <p class="field-hint">
+              Pre-built binaries from the latest GitHub release. Source code is also
+              available on the{" "}
+              <a href={versionInfo.value.releaseUrl ?? GITHUB_URL} target="_blank" rel="noreferrer">
+                releases page
+              </a>
+              .
+            </p>
+          </div>
+        )}
       </section>
     </div>
   );

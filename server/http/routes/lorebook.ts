@@ -117,6 +117,8 @@ export const lorebookRoutes = new Elysia({ prefix: "/api/bots/:id/lorebook" })
         .select()
         .from(table)
         .where(eq(table.id, row.id));
+      if (params.book === "static") await botManager.refreshCharacter(params.id).catch(() => {});
+      else await botManager.refreshMemory(params.id).catch(() => {});
       return rowToWire(inserted!);
     },
     {
@@ -182,6 +184,8 @@ export const lorebookRoutes = new Elysia({ prefix: "/api/bots/:id/lorebook" })
         set.status = 404;
         return { error: "Entry not found" };
       }
+      if (params.book === "static") await botManager.refreshCharacter(params.id).catch(() => {});
+      else await botManager.refreshMemory(params.id).catch(() => {});
       return rowToWire(updated);
     },
     {
@@ -220,6 +224,8 @@ export const lorebookRoutes = new Elysia({ prefix: "/api/bots/:id/lorebook" })
       return { error: "Entry not found" };
     }
     await db.delete(table).where(eq(table.id, params.entryId));
+    if (params.book === "static") await botManager.refreshCharacter(params.id).catch(() => {});
+    else await botManager.refreshMemory(params.id).catch(() => {});
     return { ok: true };
   })
 

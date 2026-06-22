@@ -12,7 +12,8 @@ import { OverviewRoute } from "./routes/overview";
 import { LogsRoute } from "./routes/logs";
 import { ToolCallsRoute } from "./routes/tool-calls";
 import { McpRoute } from "./routes/mcp";
-import { SettingsRoute, VERSION } from "./routes/settings";
+import { SettingsRoute } from "./routes/settings";
+import { versionInfo, versionStatus, loadVersionInfo } from "./state/version";
 
 const sidebarOpen = signal(false);
 
@@ -42,6 +43,10 @@ function AppInner() {
   useEffect(() => {
     sidebarOpen.value = false;
   }, [location]);
+
+  useEffect(() => {
+    void loadVersionInfo();
+  }, []);
 
   return (
     <div class="app-shell">
@@ -90,9 +95,35 @@ function Sidebar({ location }: { location: string }) {
         ))}
       </nav>
       <div class="sidebar-footer">
-        <span class="phase-badge">V{VERSION}</span>
+        <VersionChip />
       </div>
     </aside>
+  );
+}
+
+function VersionChip() {
+  const status = versionStatus.value;
+  const v = versionInfo.value;
+  const label =
+    status === "update" && v?.latest
+      ? `v${v.current} -> v${v.latest}`
+      : `v${v?.current ?? "..."}`;
+  return (
+    <Link href="/settings">
+      <button
+        class={`version-chip ${status}`}
+        title={
+          status === "update"
+            ? `Update available: v${v?.current} -> v${v?.latest}`
+            : status === "ok"
+              ? `Up to date (v${v?.current})`
+              : "Checking for updates..."
+        }
+      >
+        <span class="version-dot" />
+        <span class="version-label">{label}</span>
+      </button>
+    </Link>
   );
 }
 
