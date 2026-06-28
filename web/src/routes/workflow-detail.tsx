@@ -1,11 +1,12 @@
-// workflow detail. top: name + description editor. bottom: the text-node editor.
-// walks every node, finds `inputs.text` fields, and lets you edit them inline.
-// also flags which ones contain <PROMPT> (the injection point) and lets you
-// mark a node as the prompt node.
+// workflow detail. top: name + description editor. bottom: the node editor.
+// walks every node, collects all scalar inputs (string / number / boolean),
+// and lets you edit them inline. skips array values (those are node link
+// references like ["118", 1]). also flags which field contains <PROMPT> (the
+// injection point) and lets you mark any string field as the prompt node.
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { useRoute, Link } from "wouter";
-import { ArrowLeft, Save, AlertCircle, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Save, AlertCircle, CheckCircle2, Upload, ChevronDown, ChevronRight } from "lucide-react";
 import { workflowsApi } from "../api/workflows";
 import type { ComfyWorkflow, ComfyWorkflowNode } from "@shared/types";
 import { Button } from "../components/Button";
@@ -14,37 +15,121 @@ import { TextArea } from "../components/TextArea";
 import { Toggle } from "../components/Toggle";
 import { LoadingState } from "../components/State";
 import { updateWorkflowMeta, updateWorkflowContent } from "../state/workflows";
+import { toast } from "../state/toast";
 
-interface TextNodeRow {
+interface ScalarInput {
   nodeId: string;
-  title: string;
+  nodeTitle: string;
   classType: string;
-  text: string;
+  key: string;
+  type: "string" | "int" | "float" | "boolean";
+  value: string | number | boolean;
   isPrompt: boolean;
 }
 
-/** walk the workflow and extract every node with an `inputs.text` field. */
-function extractTextNodes(content: Record<string, ComfyWorkflowNode>): TextNodeRow[] {
-  const rows: TextNodeRow[] = [];
+interface ScalarNodeRow {
+  nodeId: string;
+  nodeTitle: string;
+  classType: string;
+  inputs: ScalarInput[];
+  hasPrompt: boolean;
+}
+
+interface ScalarClassGroup {
+  classType: string;
+  nodes: ScalarNodeRow[];
+  hasPrompt: boolean;
+  inputCount: number;
+}
+
+/**
+ * walk the workflow and collect every primitive scalar input (string /
+ * number / boolean). skips arrays and objects
+ */
+function extractScalarInputs(content: Record<string, ComfyWorkflowNode>): ScalarNodeRow[] {
+  const nodeMap = new Map<string, ScalarInput[]>();
+  const meta = new Map<string, { title: string; classType: string }>();
+
   for (const [nodeId, node] of Object.entries(content)) {
     const inputs = node?.inputs;
     if (!inputs || typeof inputs !== "object") continue;
-    const text = (inputs as Record<string, unknown>).text;
-    if (typeof text !== "string") continue;
+    const classType = node?.class_type || "(unknown)";
+    const nodeTitle = node?._meta?.title || nodeId;
+    meta.set(nodeId, { title: nodeTitle, classType });
+
+    for (const [key, val] of Object.entries(inputs)) {
+      // arrays = node link references (e.g. ["118", 1]). never editable.
+      if (Array.isArray(val)) continue;
+      // objects = complex widgets (lora entries etc.). handled elsewhere.
+      if (val !== null && typeof val === "object") continue;
+
+      let type: ScalarInput["type"];
+      let value: string | number | boolean;
+      if (typeof val === "string") {
+        type = "string";
+        value = val;
+      } else if (typeof val === "boolean") {
+        type = "boolean";
+        value = val;
+      } else if (typeof val === "number" && Number.isFinite(val)) {
+        type = Number.isInteger(val) ? "int" : "float";
+        value = val;
+      } else {
+        continue; // null / undefined / NaN
+      }
+
+      if (!nodeMap.has(nodeId)) nodeMap.set(nodeId, []);
+      nodeMap.get(nodeId)!.push({
+        nodeId,
+        nodeTitle,
+        classType,
+        key,
+        type,
+        value,
+        isPrompt: type === "string" && val === "<PROMPT>",
+      });
+    }
+  }
+
+  const rows: ScalarNodeRow[] = [];
+  for (const [nodeId, inputs] of nodeMap) {
+    const m = meta.get(nodeId)!;
     rows.push({
       nodeId,
-      title: node?._meta?.title || nodeId,
-      classType: node?.class_type || "(unknown)",
-      text,
-      isPrompt: text.trim() === "<PROMPT>",
+      nodeTitle: m.title,
+      classType: m.classType,
+      inputs,
+      hasPrompt: inputs.some((i) => i.isPrompt),
     });
   }
-  // prompt nodes first, then by title
+  // prompt node first, then by title
   rows.sort((a, b) => {
-    if (a.isPrompt !== b.isPrompt) return a.isPrompt ? -1 : 1;
-    return a.title.localeCompare(b.title);
+    if (a.hasPrompt !== b.hasPrompt) return a.hasPrompt ? -1 : 1;
+    return a.nodeTitle.localeCompare(b.nodeTitle);
   });
   return rows;
+}
+
+function groupScalarByClass(rows: ScalarNodeRow[]): ScalarClassGroup[] {
+  const byClass = new Map<string, ScalarNodeRow[]>();
+  for (const row of rows) {
+    if (!byClass.has(row.classType)) byClass.set(row.classType, []);
+    byClass.get(row.classType)!.push(row);
+  }
+  const groups: ScalarClassGroup[] = [];
+  for (const [classType, nodes] of byClass) {
+    groups.push({
+      classType,
+      nodes,
+      hasPrompt: nodes.some((n) => n.hasPrompt),
+      inputCount: nodes.reduce((acc, n) => acc + n.inputs.length, 0),
+    });
+  }
+  groups.sort((a, b) => {
+    if (a.hasPrompt !== b.hasPrompt) return a.hasPrompt ? -1 : 1;
+    return a.classType.localeCompare(b.classType);
+  });
+  return groups;
 }
 
 interface LoraEntry {
@@ -59,14 +144,6 @@ interface LoraLoaderRow {
   title: string;
   classType: string;
   loras: LoraEntry[];
-}
-
-interface PrimitiveRow {
-  nodeId: string;
-  title: string;
-  classType: string;
-  kind: "int" | "float" | "boolean";
-  value: number | boolean;
 }
 
 /**
@@ -104,29 +181,6 @@ function extractLoraLoaders(content: Record<string, ComfyWorkflowNode>): LoraLoa
   return rows;
 }
 
-/**
- * find PrimitiveInt / PrimitiveFloat / PrimitiveBoolean nodes with a scalar
- * `value` input. these are the comfy "quick switches" people wire up for
- * runtime tweaks.
- */
-function extractPrimitives(content: Record<string, ComfyWorkflowNode>): PrimitiveRow[] {
-  const rows: PrimitiveRow[] = [];
-  for (const [nodeId, node] of Object.entries(content)) {
-    const ct = node?.class_type;
-    const v = (node?.inputs as Record<string, unknown> | undefined)?.value;
-    const title = node?._meta?.title || nodeId;
-    if (ct === "PrimitiveBoolean" && typeof v === "boolean") {
-      rows.push({ nodeId, title, classType: ct, kind: "boolean", value: v });
-    } else if (ct === "PrimitiveInt" && typeof v === "number" && Number.isFinite(v)) {
-      rows.push({ nodeId, title, classType: ct, kind: "int", value: v });
-    } else if (ct === "PrimitiveFloat" && typeof v === "number" && Number.isFinite(v)) {
-      rows.push({ nodeId, title, classType: ct, kind: "float", value: v });
-    }
-  }
-  rows.sort((a, b) => a.title.localeCompare(b.title));
-  return rows;
-}
-
 export function WorkflowDetailRoute() {
   const [match, params] = useRoute("/workflows/:id");
   const id = params?.id;
@@ -138,6 +192,18 @@ export function WorkflowDetailRoute() {
   const [content, setContent] = useState<Record<string, ComfyWorkflowNode>>({});
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+
+  const [sectionToggles, setSectionToggles] = useState<Map<string, boolean>>(new Map());
+  function sectionOpen(key: string, defaultOpen: boolean): boolean {
+    const t = sectionToggles.get(key);
+    return t ?? defaultOpen;
+  }
+  function toggleSection(key: string, defaultOpen: boolean) {
+    const current = sectionOpen(key, defaultOpen);
+    const next = new Map(sectionToggles);
+    next.set(key, !current);
+    setSectionToggles(next);
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -168,32 +234,33 @@ export function WorkflowDetailRoute() {
       </div>
     );
 
-  const textRows = extractTextNodes(content);
+  const scalarRows = extractScalarInputs(content);
+  const scalarGroups = groupScalarByClass(scalarRows);
   const loraRows = extractLoraLoaders(content);
-  const primitiveRows = extractPrimitives(content);
-  const totalEdits = textRows.length + loraRows.length + primitiveRows.length;
-  const promptCount = textRows.filter((r) => r.isPrompt).length;
+  const totalEdits = scalarRows.length + loraRows.length;
+  const promptCount = scalarRows.flatMap((r) => r.inputs).filter((r) => r.isPrompt).length;
 
-  function setText(nodeId: string, value: string) {
+  function setInputValue(nodeId: string, key: string, value: string | number | boolean) {
     setContent((c) => {
       const next = structuredClone(c);
       const node = next[nodeId];
-      if (node?.inputs) (node.inputs as Record<string, unknown>).text = value;
+      if (node?.inputs) (node.inputs as Record<string, unknown>)[key] = value;
       return next;
     });
   }
 
-  function setAsPrompt(nodeId: string) {
+  function setAsPrompt(nodeId: string, key: string) {
     setContent((c) => {
       const next = structuredClone(c);
-      // clear any other prompt nodes first
+      // clear every other <PROMPT> first so only one injection point exists
       for (const n of Object.values(next)) {
-        if (n?.inputs && (n.inputs as Record<string, unknown>).text === "<PROMPT>") {
-          (n.inputs as Record<string, unknown>).text = "";
+        if (!n?.inputs || typeof n.inputs !== "object") continue;
+        for (const [k, v] of Object.entries(n.inputs)) {
+          if (v === "<PROMPT>") (n.inputs as Record<string, unknown>)[k] = "";
         }
       }
       const node = next[nodeId];
-      if (node?.inputs) (node.inputs as Record<string, unknown>).text = "<PROMPT>";
+      if (node?.inputs) (node.inputs as Record<string, unknown>)[key] = "<PROMPT>";
       return next;
     });
   }
@@ -209,20 +276,35 @@ export function WorkflowDetailRoute() {
     });
   }
 
-  function setPrimitiveValue(nodeId: string, value: number | boolean) {
-    setContent((c) => {
-      const next = structuredClone(c);
-      const node = next[nodeId];
-      if (node?.inputs) (node.inputs as Record<string, unknown>).value = value;
-      return next;
-    });
-  }
-
   async function saveContent() {
     if (!id) return;
     setSavingContent(true);
     await updateWorkflowContent(id, content);
     setSavingContent(false);
+  }
+
+  const uploadRef = useRef<HTMLInputElement>(null);
+  async function onUploadJson(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        throw new Error("Expected a JSON object of ComfyUI nodes.");
+      setContent(parsed as Record<string, ComfyWorkflowNode>);
+      const hasPrompt = Object.values(parsed as Record<string, unknown>).some((n) => {
+        const node = n as { inputs?: Record<string, unknown> };
+        return node?.inputs && Object.values(node.inputs).some((v) => v === "<PROMPT>");
+      });
+      if (hasPrompt) toast.show("Workflow JSON loaded. Click Save nodes to apply.", "success");
+      else toast.warn("Loaded. No <PROMPT> placeholder found — set one before saving.");
+    } catch (err) {
+      toast.show(`Upload failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+    } finally {
+      input.value = "";
+    }
   }
 
   async function saveMeta() {
@@ -268,73 +350,155 @@ export function WorkflowDetailRoute() {
           <div>
             <h3 style={{ margin: 0 }}>Nodes</h3>
             <p class="field-hint" style={{ margin: "4px 0 0" }}>
-              Edit text, loras, and primitive values inline. Changes apply on save.
+              Edit any string, number, or boolean input inline. Arrays are node links and stay read-only. Changes apply on save.
             </p>
           </div>
-          <Button onClick={saveContent} loading={savingContent} disabled={savingContent}>
-            <Save size={14} /> Save nodes
-          </Button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              ref={uploadRef}
+              type="file"
+              accept=".json,application/json"
+              style={{ display: "none" }}
+              onChange={(e) => void onUploadJson(e)}
+            />
+            <Button variant="subtle" size="sm" onClick={() => uploadRef.current?.click()}>
+              <Upload size={14} /> Upload JSON
+            </Button>
+            <Button onClick={saveContent} loading={savingContent} disabled={savingContent}>
+              <Save size={14} /> Save nodes
+            </Button>
+          </div>
         </div>
 
         {totalEdits === 0 ? (
           <div class="empty-text-nodes">
             <p>No editable nodes in this workflow.</p>
             <p class="field-hint">
-              Either upload a real ComfyUI workflow JSON, or this workflow has no text inputs, lora loaders, or primitives.
+              Upload a ComfyUI workflow JSON to populate this workflow.
             </p>
           </div>
         ) : (
           <>
-            {textRows.length > 0 && (
-              <div class="workflow-section">
-                <div class="workflow-section-title">
-                  Text nodes <span class="section-count">{textRows.length}</span>
+            {scalarGroups.length > 0 && (
+              <>
+                {/* prompt-status banner once for the whole scalar block */}
+                <div class="workflow-prompt-banner">
                   {promptCount === 1 ? (
                     <span class="section-ok">
                       <CheckCircle2 size={12} /> Prompt node set.
                     </span>
                   ) : promptCount === 0 ? (
                     <span class="section-warn">
-                      <AlertCircle size={12} /> No prompt node. Click "Use as prompt" on one.
+                      <AlertCircle size={12} /> No prompt node. Click "Use as prompt" on a text field.
                     </span>
                   ) : (
                     <span class="section-warn">{promptCount} prompt nodes (only the first is used).</span>
                   )}
                 </div>
-                <div class="text-node-list">
-                  {textRows.map((row) => (
-                    <div key={row.nodeId} class={`text-node-row ${row.isPrompt ? "is-prompt" : ""}`}>
-                      <div class="text-node-meta">
-                        <span class="text-node-id">#{row.nodeId}</span>
-                        <span class="text-node-title">{row.title}</span>
-                        <span class="text-node-class">{row.classType}</span>
-                        {row.isPrompt && <span class="text-node-badge">PROMPT</span>}
-                      </div>
-                      <TextArea
-                        label=""
-                        name={`text-${row.nodeId}`}
-                        value={row.text}
-                        onInput={(e) => setText(row.nodeId, (e.target as HTMLTextAreaElement).value)}
-                        rows={row.text.length > 80 ? 3 : 1}
-                        mono
-                      />
-                      {!row.isPrompt && (
-                        <Button variant="ghost" size="sm" onClick={() => setAsPrompt(row.nodeId)}>
-                          Use as prompt
-                        </Button>
-                      )}
+                {scalarGroups.map((group) => {
+                  const secKey = `s:${group.classType}`;
+                  const defOpen = group.hasPrompt;
+                  const open = sectionOpen(secKey, defOpen);
+                  return (
+                    <div key={group.classType} class="workflow-section">
+                      <button
+                        type="button"
+                        class="workflow-section-title collapsible"
+                        onClick={() => toggleSection(secKey, defOpen)}
+                      >
+                        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        <span class="scalar-class-name">{group.classType}</span>
+                        <span class="section-count">{group.nodes.length} node{group.nodes.length === 1 ? "" : "s"}</span>
+                        <span class="section-hint">{group.inputCount} input{group.inputCount === 1 ? "" : "s"}</span>
+                        {group.hasPrompt && (
+                          <span class="text-node-badge">PROMPT</span>
+                        )}
+                      </button>
+                      {open && (
+                        <div class="text-node-list">
+                      {group.nodes.map((row) => (
+                        <div key={row.nodeId} class={`text-node-row ${row.hasPrompt ? "is-prompt" : ""}`}>
+                          <div class="text-node-meta">
+                            <span class="text-node-id">#{row.nodeId}</span>
+                            <span class="text-node-title">{row.nodeTitle}</span>
+                            {row.hasPrompt && <span class="text-node-badge-muted">prompt</span>}
+                          </div>
+                          <div class="scalar-input-list">
+                            {row.inputs.map((inp) => {
+                              if (inp.type === "string") {
+                                return (
+                                  <div key={inp.key} class="scalar-input-row">
+                                    <div class="scalar-input-head">
+                                    <span class="scalar-input-key">{inp.key}</span>
+                                      {!inp.isPrompt && (
+                                        <Button variant="ghost" size="sm" onClick={() => setAsPrompt(row.nodeId, inp.key)}>
+                                          Use as prompt
+                                        </Button>
+                                      )}
+                                    </div>
+                                    <TextArea
+                                      label=""
+                                      name={`${row.nodeId}-${inp.key}`}
+                                      value={inp.value as string}
+                                      onInput={(e) => setInputValue(row.nodeId, inp.key, (e.target as HTMLTextAreaElement).value)}
+                                      rows={(inp.value as string).length > 80 ? 3 : 1}
+                                      mono
+                                    />
+                                  </div>
+                                );
+                              }
+                              if (inp.type === "boolean") {
+                                return (
+                                  <Toggle
+                                    key={inp.key}
+                                    label={inp.key}
+                                    checked={inp.value as boolean}
+                                    onChange={(v) => setInputValue(row.nodeId, inp.key, v)}
+                                  />
+                                );
+                              }
+                              return (
+                                <Field
+                                  key={inp.key}
+                                  label={inp.key}
+                                  name={`${row.nodeId}-${inp.key}`}
+                                  type="number"
+                                  step={inp.type === "int" ? "1" : "0.01"}
+                                  value={String(inp.value)}
+                                  onInput={(e) => {
+                                    const n = Number((e.target as HTMLInputElement).value);
+                                    if (Number.isFinite(n)) setInputValue(row.nodeId, inp.key, n);
+                                  }}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              </div>
+              );
+            })}
+              </>
             )}
 
-            {loraRows.length > 0 && (
+            {loraRows.length > 0 && (() => {
+              const secKey = "lora";
+              const defOpen = true;
+              const open = sectionOpen(secKey, defOpen);
+              return (
               <div class="workflow-section">
-                <div class="workflow-section-title">
+                <button
+                  type="button"
+                  class="workflow-section-title collapsible"
+                  onClick={() => toggleSection(secKey, defOpen)}
+                >
+                  {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   Lora loaders <span class="section-count">{loraRows.length}</span>
                   <span class="section-hint">Toggle on/off and tune strength per lora.</span>
-                </div>
+                </button>
+                {open && (
                 <div class="text-node-list">
                   {loraRows.map((row) => (
                     <div key={row.nodeId} class="text-node-row">
@@ -387,47 +551,10 @@ export function WorkflowDetailRoute() {
                     </div>
                   ))}
                 </div>
+                )}
               </div>
-            )}
-
-            {primitiveRows.length > 0 && (
-              <div class="workflow-section">
-                <div class="workflow-section-title">
-                  Primitive values <span class="section-count">{primitiveRows.length}</span>
-                  <span class="section-hint">Quick switches for ints, floats, and booleans.</span>
-                </div>
-                <div class="text-node-list">
-                  {primitiveRows.map((row) => (
-                    <div key={row.nodeId} class="text-node-row">
-                      <div class="text-node-meta">
-                        <span class="text-node-id">#{row.nodeId}</span>
-                        <span class="text-node-title">{row.title}</span>
-                        <span class="text-node-class">{row.classType}</span>
-                      </div>
-                      {row.kind === "boolean" ? (
-                        <Toggle
-                          label="Value"
-                          checked={row.value as boolean}
-                          onChange={(v) => setPrimitiveValue(row.nodeId, v)}
-                        />
-                      ) : (
-                        <Field
-                          label="Value"
-                          name={`prim-${row.nodeId}`}
-                          type="number"
-                          step={row.kind === "int" ? "1" : "0.01"}
-                          value={String(row.value)}
-                          onInput={(e) => {
-                            const n = Number((e.target as HTMLInputElement).value);
-                            if (Number.isFinite(n)) setPrimitiveValue(row.nodeId, n);
-                          }}
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+              );
+            })()}
           </>
         )}
       </div>

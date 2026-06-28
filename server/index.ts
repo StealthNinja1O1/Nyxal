@@ -20,6 +20,16 @@ import { startLogRetentionPruner } from "./bot/logRetention";
 import { EMBEDDED_WEB } from "./embeddedManifest.gen";
 
 const PORT = Number(process.env.NYXAL_PORT || 3000);
+process.on("uncaughtException", (err) => {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (err instanceof RangeError && /shard.*not found/i.test(msg)) {
+    console.warn("[safety] ignored discord.js presence RangeError:", msg);
+    return;
+  }
+  console.error("[fatal] uncaughtException:", err);
+  // re-crash on anything else so bun/pm restart loops can kick in.
+  process.exit(1);
+});
 
 async function main() {
   runMigrations();

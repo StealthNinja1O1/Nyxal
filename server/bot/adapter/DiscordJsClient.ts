@@ -40,11 +40,16 @@ export class DiscordJsClient implements DiscordClient {
   }
 
   setPresence(presence: PresenceInput): void {
+    if (!this.client.isReady()) return;
     try {
-      this.client.user?.setPresence({
+      const result = this.client.user?.setPresence({
         activities: presence.activities.map((a) => ({ name: a.name, type: a.type as any })),
         status: presence.status,
       });
+      // some discord.js versions return a thenable from setPresence
+      if (result && typeof (result as unknown as { then?: unknown }).then === "function") {
+        void (result as unknown as Promise<unknown>).catch(() => {});
+      }
     } catch {
     }
   }

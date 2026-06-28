@@ -1125,6 +1125,24 @@ select.field-input option {
   font-weight: 600;
   color: var(--text);
 }
+/* collapsible variant — clickable header button with a chevron */
+.workflow-section-title.collapsible {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  margin: -4px -8px 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: background 0.12s;
+}
+.workflow-section-title.collapsible:hover { background: var(--panel-hover); }
+.workflow-section-title.collapsible > svg:first-child {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
 .section-count {
   font-size: 11px;
   font-weight: 600;
@@ -1162,6 +1180,46 @@ select.field-input option {
   border: 1px solid var(--border);
   padding: 2px 6px;
   border-radius: 4px;
+}
+
+/* generic scalar input editor (string / int / float / boolean) */
+.scalar-input-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.scalar-input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.scalar-input-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.scalar-input-key {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  text-transform: lowercase;
+}
+
+/* class_type group header (scalar inputs grouped by node kind) */
+.scalar-class-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* prompt-status banner above the grouped scalar sections */
+.workflow-prompt-banner {
+  padding: 4px 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* power lora loader editor */
