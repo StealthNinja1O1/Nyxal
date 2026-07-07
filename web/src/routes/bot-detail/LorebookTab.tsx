@@ -3,7 +3,7 @@
 // is the book param + a help-string; everything else is identical.
 
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { Plus, Pencil, Trash2, BookOpen, Brain, ArrowDownUp } from "lucide-react";
+import { Plus, Pencil, Trash2, BookOpen, Brain, ArrowDownUp, RotateCw } from "lucide-react";
 import { lorebookApi } from "../../api/lorebook";
 import type { LorebookEntryWire, NewEntry, Book } from "../../api/lorebook-types";
 import { newEntryDefaults } from "../../api/lorebook-types";
@@ -34,7 +34,7 @@ interface Props {
 export function LorebookTab({ botId, book }: Props) {
   const [entries, setEntries] = useState<LorebookEntryWire[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sortMode, setSortMode] = useState<SortMode>("order");
+  const [sortMode, setSortMode] = useState<SortMode>("updated-new");
   const [editing, setEditing] = useState<{ open: boolean; entry: LorebookEntryWire | null }>({
     open: false,
     entry: null,
@@ -152,6 +152,17 @@ export function LorebookTab({ botId, book }: Props) {
           <Button size="sm" onClick={() => setEditing({ open: true, entry: null })}>
             <Plus size={15} />
             New entry
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={loading}
+            onClick={() => void reload()}
+            aria-label={`Refresh ${book} entries`}
+            title="Refresh"
+          >
+            <RotateCw size={15} />
+            Refresh
           </Button>
         </div>
         <div class="sort-select-wrap">
