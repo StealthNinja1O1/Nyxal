@@ -85,7 +85,8 @@ export const DEFAULT_COMFYUI: ComfyUiConfig = {
 };
 
 export const DEFAULT_WEBSEARCH: WebSearchConfig = {
-  baseUrl: "https://websearch.miyami.tech",
+  // The public miyami.tech instance was taken down :sob:
+  baseUrl: "",
   language: "auto",
   maxResults: 5,
   autoBypass: true,

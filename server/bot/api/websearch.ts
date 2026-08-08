@@ -1,5 +1,4 @@
 // Websearch implementation using Miyami API https://github.com/ankushthakur2007/miyami_websearch_tool
-
 import type { WebSearchConfig } from "../../../shared/types";
 import type { Logger } from "../utils/logger";
 
@@ -46,8 +45,21 @@ export interface CrawlSiteResponse {
   totalWords: number;
 }
 
-function buildBaseUrl(config: WebSearchConfig): string {
-  return config.baseUrl.replace(/\/+$/, "");
+function parseBase(config: WebSearchConfig): { origin: string; auth: string | null } {
+  const raw = config.baseUrl.replace(/\/+$/, "");
+  try {
+    const u = new URL(raw);
+    if (u.username || u.password) {
+      const cred = Buffer.from(`${u.username}:${u.password}`, "utf-8").toString("base64");
+      u.username = "";
+      u.password = "";
+      return { origin: u.toString().replace(/\/+$/, ""), auth: `Basic ${cred}` };
+    }
+    return { origin: raw, auth: null };
+  } catch {
+    // not a parseable URL, leave as-is, no auth
+    return { origin: raw, auth: null };
+  }
 }
 
 function commonParams(config: WebSearchConfig): Record<string, string> {
@@ -56,15 +68,22 @@ function commonParams(config: WebSearchConfig): Record<string, string> {
   return params;
 }
 
-async function miyamiFetch(log: Logger, url: string, timeoutMs = 15000): Promise<Record<string, unknown>> {
+async function miyamiFetch(
+  log: Logger,
+  url: string,
+  auth: string | null,
+  timeoutMs = 15000,
+): Promise<Record<string, unknown>> {
   log.debug(`Miyami API request: ${url}`);
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+  };
+  if (auth) headers.Authorization = auth;
   const res = await fetch(url, {
     method: "GET",
-    headers: {
-      Accept: "application/json",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    },
+    headers,
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`Miyami API returned HTTP ${res.status}: ${res.statusText}`);
@@ -76,9 +95,10 @@ function truncate(text: string, maxLen: number): string {
 }
 
 export async function searchWeb(query: string, config: WebSearchConfig, log: Logger): Promise<WebSearchResponse> {
+  const base = parseBase(config);
   const params = new URLSearchParams({ ...commonParams(config), query });
-  const url = `${buildBaseUrl(config)}/search-api?${params.toString()}`;
-  const data = await miyamiFetch(log, url);
+  const url = `${base.origin}/search-api?${params.toString()}`;
+  const data = await miyamiFetch(log, url, base.auth);
 
   const rawResults = ((data.results as any[]) || []).filter((r) => r.url && r.title);
   const results: WebSearchResult[] = rawResults
@@ -103,9 +123,10 @@ export async function fetchWebpage(
   config: WebSearchConfig,
   log: Logger,
 ): Promise<FetchWebpageResponse> {
+  const base = parseBase(config);
   const params = new URLSearchParams({ ...commonParams(config), url: targetUrl, format: "markdown" });
-  const url = `${buildBaseUrl(config)}/fetch?${params.toString()}`;
-  const data = await miyamiFetch(log, url, 30000);
+  const url = `${base.origin}/fetch?${params.toString()}`;
+  const data = await miyamiFetch(log, url, base.auth, 30000);
   const title = (data.metadata as any)?.title || (data.url as string) || targetUrl;
   const content = (data.content as string) || "";
   const wordCount = (data.stats as any)?.word_count || 0;
@@ -125,8 +146,9 @@ export async function searchAndFetchApi(
     num_results: String(Math.min(Math.max(numResults, 1), 5)),
     format: "markdown",
   });
-  const url = `${buildBaseUrl(config)}/search-and-fetch?${params.toString()}`;
-  const data = await miyamiFetch(log, url, 60000);
+  const base = parseBase(config);
+  const url = `${base.origin}/search-and-fetch?${params.toString()}`;
+  const data = await miyamiFetch(log, url, base.auth, 60000);
   const results = ((data.results as any[]) || []).map((r) => ({
     title: r.search_result?.title || "",
     url: r.search_result?.url || "",
@@ -145,8 +167,9 @@ export async function deepResearchApi(
   log: Logger,
 ): Promise<DeepResearchResponse> {
   const params = new URLSearchParams({ ...commonParams(config), queries: queries.join(","), breadth: "3" });
-  const url = `${buildBaseUrl(config)}/deep-research?${params.toString()}`;
-  const data = await miyamiFetch(log, url, 120000);
+  const base = parseBase(config);
+  const url = `${base.origin}/deep-research?${params.toString()}`;
+  const data = await miyamiFetch(log, url, base.auth, 120000);
   const compiledReport = (data.compiled_report as string) || "";
   const totalResults = (data.research_summary as any)?.total_results_found || 0;
   const successfulFetches = (data.research_summary as any)?.total_successful_fetches || 0;
@@ -168,8 +191,9 @@ export async function crawlSiteApi(
     max_depth: String(Math.min(Math.max(maxDepth, 0), 5)),
     format: "markdown",
   });
-  const url = `${buildBaseUrl(config)}/crawl-site?${params.toString()}`;
-  const data = await miyamiFetch(log, url, 120000);
+  const base = parseBase(config);
+  const url = `${base.origin}/crawl-site?${params.toString()}`;
+  const data = await miyamiFetch(log, url, base.auth, 120000);
   const pages = ((data.pages as any[]) || []).map((p) => ({
     url: p.url || "",
     title: p.metadata?.title || "",

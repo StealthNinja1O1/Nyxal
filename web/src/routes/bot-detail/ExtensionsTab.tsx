@@ -300,8 +300,8 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
           name="searchBaseUrl"
           value={websearch.baseUrl}
           onInput={(e) => setSearch("baseUrl", (e.target as HTMLInputElement).value)}
-          placeholder="https://websearch.miyami.tech"
-          hint="Self-host with: docker run -p 8080:8080 searxng-api"
+          placeholder="https://your-miyami-instance"
+          hint="Self-host: Look at https://github.com/ankushthakur2007/miyami_websearch_tool. Basic auth with user:pass@... supported."
         />
         <div class="setting-row-grid">
           <div class="field">
