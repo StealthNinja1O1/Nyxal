@@ -9,6 +9,7 @@ import {
 } from "./history";
 import { processLorebook } from "./lorebook/lorebook";
 import { parseLorebook } from "./lorebook/normalizeLorebook";
+import { loadSummaryState, loadSummaries, snowflakeLte } from "./stores/summaryStore";
 import type { CharacterBook, CharacterBookEntry } from "./lorebook/types";
 import type { ChatMemoryBook, ImageAttachment, ReactionInfo } from "./types";
 import type { CommandMetadataStore } from "./stores/commandMetadataStore";
@@ -32,6 +33,8 @@ export interface GenerateAIResponseResult {
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
   model: string;
   temperature: number;
+  fetchedWindow: PromptMessage[]; // fetched+formatted message window, incl trigger msg
+  userName: string;
 }
 
 interface GuildInfo {
@@ -57,6 +60,7 @@ interface BuildPromptOptions {
   guildInfo?: GuildInfo;
   replyContext?: string | null;
   chatMemoryBook?: ChatMemoryBook | null;
+  summaries?: string[];
 }
 
 export interface PromptDeps {
@@ -149,7 +153,7 @@ export async function buildAIRequest(
   character: string;
 }> {
   const { config, log, tokens, metadataStore, availableCommands } = deps;
-  const { character, messages, userName = "User", guildInfo, replyContext, chatMemoryBook } = opts;
+  const { character, messages, userName = "User", guildInfo, replyContext, chatMemoryBook, summaries } = opts;
 
   const charName = character.name || "Character";
   const charDescription = character.description;
@@ -248,6 +252,18 @@ export async function buildAIRequest(
     else aiMessages[targetIndex]!.content += "\n" + character.depthPrompt.prompt;
   }
 
+  // conversation summaries injected into system message
+  // before lorebook to hopefully improve caching results
+  if (summaries && summaries.length > 0) {
+    const summariesBlock =
+      `\n<conversation_recaps>\n` +
+      `These are your own memory notes from earlier in this conversation, written in your voice. ` +
+      `Treat them as your genuine recollection of what happened. Oldest first:\n\n` +
+      summaries.map((s, i) => `--- Recap ${i + 1} ---\n${s}`).join("\n\n") +
+      `\n</conversation_recaps>\n`;
+    aiMessages[0]!.content += summariesBlock;
+  }
+
   const temperature = config.temperature > 1 ? config.temperature / 100 : config.temperature;
 
   // lorebook processing: merge static + dynamic
@@ -340,8 +356,9 @@ export async function trimMessagesToTokenBudget(
   character: BuildPromptOptions["character"],
   userName: string,
   maxContextTokens: number,
+  summaries: string[] = [],
 ): Promise<PromptMessage[]> {
-  const initial = await buildAIRequest(deps, { character, messages: [], userName });
+  const initial = await buildAIRequest(deps, { character, messages: [], userName, summaries });
   const systemPromptTokens = deps.tokens.count(initial.messages[0]!.content);
   let available = maxContextTokens - systemPromptTokens;
 
@@ -366,6 +383,7 @@ export async function generateAIResponse(
   chatMemoryBook: ChatMemoryBook | null,
 ): Promise<GenerateAIResponseResult> {
   const { config, creds, log } = deps;
+  let opts_summaries: string[] = [];
   try {
     const userDisplayName = message.author.displayName || message.author.username;
     const username = message.author.username;
@@ -399,12 +417,32 @@ export async function generateAIResponse(
       hasAttachments: msg.hasAttachments,
     }));
 
+    // drop any messages already covered by a summary (id <= watermark)
+    // from the window, since the content is captured in the recap.
+    // The full allMessages is still returned for the post-turn summarizer.
+    // summary rows are keyed by the nyxal bot id (config.botId, a uuid), not the discord botId
+    let windowMessages = allMessages;
+    if (config.summary.enabled && config.botId) {
+      const [state, summaries] = await Promise.all([
+        loadSummaryState(config.botId, message.channelId),
+        loadSummaries(config.botId, message.channelId),
+      ]);
+      const watermark = state?.lastSummarizedMessageId ?? null;
+      if (watermark) {
+        windowMessages = allMessages.filter(
+          (m) => !m.id || !snowflakeLte(m.id, watermark),
+        );
+      }
+      opts_summaries = summaries.map((s) => s.content);
+    }
+
     const trimmedMessages = await trimMessagesToTokenBudget(
       deps,
-      allMessages,
+      windowMessages,
       character,
       userDisplayName,
       config.maxContextTokens,
+      opts_summaries,
     );
 
     const { model, messages, temperature } = await buildAIRequest(deps, {
@@ -414,6 +452,7 @@ export async function generateAIResponse(
       guildInfo,
       replyContext,
       chatMemoryBook,
+      summaries: opts_summaries,
     });
 
     log.debug(`Sending ${trimmedMessages.length} messages to LLM (${model})`);
@@ -446,8 +485,8 @@ export async function generateAIResponse(
       }
     }
 
-    const response = await generateResponse(creds, log, model, messages, temperature, config.addNothink, finalImages);
-    return { response, messages, model, temperature };
+    const response = await generateResponse(creds, log, model, messages, temperature, config.addNothink, finalImages, "chat");
+    return { response, messages, model, temperature, fetchedWindow: allMessages, userName: userDisplayName };
   } catch (error) {
     log.error("Error generating AI response:", error);
     throw error;
@@ -469,7 +508,7 @@ export async function generateFollowUpResponse(
     { role: "user" as const, content: toolResultContent },
   ];
   deps.log.debug(`Sending follow-up with ${messages.length} messages to LLM (${model})`);
-  return generateResponse(deps.creds, deps.log, model, messages, temperature, noThink);
+  return generateResponse(deps.creds, deps.log, model, messages, temperature, noThink, [], "followup");
 }
 
 async function replaceMentionsWithNames(log: Logger, message: DiscordMessage): Promise<string> {

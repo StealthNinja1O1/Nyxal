@@ -62,6 +62,7 @@ function botRowToPublic(row: typeof bots.$inferSelect) {
     statusCfg: row.status,
     comfyui: normalizeComfyui(row.comfyui),
     websearch: row.websearch,
+    summary: row.summary,
     comfyuiWorkflowIds: row.comfyuiWorkflowIds ?? [],
     comfyuiDefaultWorkflowId: row.comfyuiDefaultWorkflowId,
     toolOverrides: row.toolOverrides ?? {},
@@ -145,7 +146,7 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
         "randomResponseRate", "maxHistoryMessages", "maxContextTokens",
         "ignoreOtherBots", "replyToMentions", "addTimestamps", "addNothink",
         "enableUserStatus", "minResponseIntervalSeconds", "maxRecursionDepth", "logLevel",
-        "status", "comfyui", "websearch", "comfyuiWorkflowIds", "comfyuiDefaultWorkflowId",
+        "status", "comfyui", "websearch", "summary", "comfyuiWorkflowIds", "comfyuiDefaultWorkflowId",
         "toolOverrides", "mcpServerIds",
       ] as const;
       for (const k of keys) {
@@ -207,6 +208,7 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
         status: t.Optional(t.Record(t.String(), t.Unknown())),
         comfyui: t.Optional(t.Record(t.String(), t.Unknown())),
         websearch: t.Optional(t.Record(t.String(), t.Unknown())),
+        summary: t.Optional(t.Record(t.String(), t.Unknown())),
         comfyuiWorkflowIds: t.Optional(t.Array(t.String())),
         comfyuiDefaultWorkflowId: t.Optional(t.Union([t.String(), t.Null()])),
         toolOverrides: t.Optional(t.Record(t.String(), t.Record(t.String(), t.Unknown()))),

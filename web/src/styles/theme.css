@@ -572,7 +572,7 @@ a { color: inherit; text-decoration: none; }
   transition: background 0.12s;
 }
 .list-row-wrap:hover .list-row { background: var(--panel-hover); }
-.list-row-main { min-width: 0; }
+.list-row-main { min-width: 0; flex: 1; }
 .list-row-title-line {
   display: flex;
   align-items: center;
@@ -1988,6 +1988,112 @@ select.field-input option {
   border-bottom: 1px solid var(--border);
 }
 .mcp-server-row:last-child { border-bottom: none; }
+
+/* ---- LLM request viewer (bot detail > Requests) ---- */
+.req-layout {
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 800px) {
+  .req-layout { grid-template-columns: 1fr; }
+}
+.req-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.req-item {
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--text);
+  font: inherit;
+}
+.req-item:hover { background: var(--panel-hover); }
+.req-item.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-ring); }
+.req-item-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.req-item-time { font-size: 11px; color: var(--text-faint); }
+.req-item-model {
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.req-item-meta { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.req-detail {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 0;
+}
+.req-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.req-msg {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--bg-elev);
+}
+.req-msg-system { background: var(--panel); }
+.req-msg-assistant { border-color: var(--border-strong); }
+.req-msg-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.req-role {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.req-role-system { background: rgba(160, 160, 173, 0.16); color: var(--text-dim); }
+.req-role-user { background: var(--accent-soft); color: var(--accent); }
+.req-role-assistant { background: rgba(90, 160, 255, 0.14); color: #7ab0ff; }
+.req-content {
+  font-size: 13px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 420px;
+  overflow: auto;
+}
+.req-content.mono { font-family: var(--mono); font-size: 12px; }
+.req-cmds { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.req-cmd {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--panel-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
 .list-row-tools {
   padding: 0 16px 14px;
   border-top: 1px solid var(--border);

@@ -94,12 +94,42 @@ export interface WebSearchConfig {
   autoBypass: boolean;
 }
 
+export interface SummaryConfig {
+  enabled: boolean;
+  summaryThresholdTokens: number;
+  maxSummariesPerChat: number;
+  rollingWindowMessages: number;
+  summaryModel: string;
+  minSummaryTokens: number;
+  countFallbackRatio: number;
+}
+
 /** Per-tool override stored on bots.tool_overrides. keyed by command name. */
 export interface ToolOverride {
   enabled?: boolean;
   description?: string;
 }
 export type ToolOverrides = Record<string, ToolOverride>;
+
+export interface CapturedMessagePart {
+  type: "text" | "image_url";
+  text?: string;
+  note?: string; // placeholder shown instead of base64 image data
+}
+export interface CapturedLlmMessage {
+  role: string;
+  content: string | CapturedMessagePart[];
+}
+export interface LlmRequestCapture {
+  id: number;
+  source: string; // chat | followup | summary
+  model: string;
+  temperature: number;
+  messages: CapturedLlmMessage[];
+  promptTokens: number;
+  success: boolean;
+  createdAt: number;
+}
 
 /** Stored MCP server row shape (mirrors server/db/schema.ts). */
 export interface McpServer {

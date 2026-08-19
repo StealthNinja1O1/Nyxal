@@ -4,6 +4,7 @@ import type {
   BotStatusConfig,
   ComfyUiConfig,
   WebSearchConfig,
+  SummaryConfig,
   DepthPrompt,
   ToolOverrides,
 } from "@shared/types";
@@ -43,6 +44,7 @@ export interface Bot {
   statusCfg: BotStatusConfig;
   comfyui: ComfyUiConfig;
   websearch: WebSearchConfig;
+  summary: SummaryConfig;
   comfyuiWorkflowIds: string[];
   comfyuiDefaultWorkflowId: string | null;
   toolOverrides: ToolOverrides;
@@ -88,6 +90,7 @@ export type BotPatch = Partial<{
   status: BotStatusConfig;
   comfyui: ComfyUiConfig;
   websearch: WebSearchConfig;
+  summary: SummaryConfig;
   comfyuiWorkflowIds: string[];
   comfyuiDefaultWorkflowId: string | null;
   toolOverrides: ToolOverrides;

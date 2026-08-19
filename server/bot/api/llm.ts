@@ -1,5 +1,7 @@
 import { db } from "../../db";
-import { llmCallLog } from "../../db/schema";
+import { llmCallLog, llmRequestCapture } from "../../db/schema";
+import { desc, eq, inArray } from "drizzle-orm";
+import type { CapturedLlmMessage } from "../../../shared/types";
 import type { ImageAttachment } from "../types";
 import type { Logger } from "../utils/logger";
 import { broadcast } from "../ws/hub";
@@ -21,6 +23,11 @@ export interface LlmCreds {
   providerId: string | null;
 }
 
+export type LlmCallSource = "chat" | "followup" | "summary";
+
+// how many submitted request bodies to keep per bot before deleting old stuff
+const MAX_CAPTURED_REQUESTS = 25;
+
 export async function generateResponse(
   creds: LlmCreds,
   log: Logger,
@@ -29,6 +36,7 @@ export async function generateResponse(
   temperature: number,
   noThink = false,
   images: ImageAttachment[] = [],
+  source: LlmCallSource = "chat",
 ): Promise<string> {
   let finalMessages = messages;
 
@@ -90,6 +98,9 @@ export async function generateResponse(
   } finally {
     // record to llm_call_log regardless of success
     void recordCall(creds, model, usage, Date.now() - start, success).catch(() => {});
+    void captureRequest(creds, source, model, temperature, finalMessages, usage?.prompt_tokens ?? 0, success).catch(
+      () => {},
+    );
   }
 }
 
@@ -125,4 +136,53 @@ async function recordCall(
     success,
     at,
   });
+}
+
+/**
+ * Strip anything huge from the submitted messages.
+ * base64 image data URLs become a size note, "[image omitted: ~123KB]"
+ */
+function sanitizeForCapture(messages: ChatMessage[]): CapturedLlmMessage[] {
+  return messages.map((m) => {
+    if (typeof m.content === "string") return { role: m.role, content: m.content };
+    return {
+      role: m.role,
+      content: m.content.map((part) => {
+        if (part.type === "text") return { type: "text" as const, text: part.text ?? "" };
+        const url = part.image_url?.url ?? "";
+        const kb = Math.max(1, Math.round(url.length / 1.37 / 1024));
+        return { type: "image_url" as const, note: `[image omitted: ~${kb}KB]` };
+      }),
+    };
+  });
+}
+
+// Persist the submitted request body, trimmed to the newest n rows per bot
+async function captureRequest(
+  creds: LlmCreds,
+  source: LlmCallSource,
+  model: string,
+  temperature: number,
+  messages: ChatMessage[],
+  promptTokens: number,
+  success: boolean,
+): Promise<void> {
+  await db.insert(llmRequestCapture).values({
+    botId: creds.botId,
+    source,
+    model,
+    temperature,
+    messages: sanitizeForCapture(messages),
+    promptTokens,
+    success,
+    createdAt: new Date(),
+  });
+
+  const rows = await db
+    .select({ id: llmRequestCapture.id })
+    .from(llmRequestCapture)
+    .where(eq(llmRequestCapture.botId, creds.botId))
+    .orderBy(desc(llmRequestCapture.id));
+  const overflow = rows.slice(MAX_CAPTURED_REQUESTS).map((r) => r.id);
+  if (overflow.length > 0) await db.delete(llmRequestCapture).where(inArray(llmRequestCapture.id, overflow));
 }

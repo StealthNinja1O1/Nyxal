@@ -7,6 +7,8 @@ import { webDistDir } from "./paths";
 import { providersRoutes } from "./http/routes/providers";
 import { botsRoutes } from "./http/routes/bots";
 import { lorebookRoutes } from "./http/routes/lorebook";
+import { summariesRoutes } from "./http/routes/summaries";
+import { requestsRoutes } from "./http/routes/requests";
 import { workflowsRoutes } from "./http/routes/workflows";
 import { statsRoutes } from "./http/routes/stats";
 import { settingsRoutes } from "./http/routes/settings";
@@ -40,6 +42,8 @@ async function main() {
     .use(providersRoutes)
     .use(botsRoutes)
     .use(lorebookRoutes)
+    .use(summariesRoutes)
+    .use(requestsRoutes)
     .use(workflowsRoutes)
     .use(statsRoutes)
     .use(settingsRoutes)

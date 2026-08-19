@@ -11,7 +11,7 @@ import { useEffect, useState } from "preact/hooks";
 import { Save, ExternalLink, Plus, Trash2, Star, X } from "lucide-react";
 import { Link } from "wouter";
 import type { Bot } from "../../api/bots-types";
-import type { ComfyUiConfig, WebSearchConfig, ComfyResolution } from "@shared/types";
+import type { ComfyUiConfig, WebSearchConfig, SummaryConfig, ComfyResolution } from "@shared/types";
 import { updateBot } from "../../state/bots";
 import { workflows, loadWorkflows } from "../../state/workflows";
 import { Button } from "../../components/Button";
@@ -25,7 +25,8 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
   );
   const [comfyui, setComfyui] = useState<ComfyUiConfig>(bot.comfyui);
   const [websearch, setWebsearch] = useState<WebSearchConfig>(bot.websearch);
-  const [saving, setSaving] = useState<false | "comfyui" | "websearch" | "workflow">(false);
+  const [summary, setSummary] = useState<SummaryConfig>(bot.summary);
+  const [saving, setSaving] = useState<false | "comfyui" | "websearch" | "summary" | "workflow">(false);
 
   useEffect(() => {
     if (workflows.value.length === 0) void loadWorkflows();
@@ -37,6 +38,7 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
     setDefaultWorkflowId(bot.comfyuiDefaultWorkflowId);
     setComfyui(bot.comfyui);
     setWebsearch(bot.websearch);
+    setSummary(bot.summary);
   }, [bot.updatedAt]);
 
   function setComfy<K extends keyof ComfyUiConfig>(k: K, v: ComfyUiConfig[K]) {
@@ -44,6 +46,9 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
   }
   function setSearch<K extends keyof WebSearchConfig>(k: K, v: WebSearchConfig[K]) {
     setWebsearch((s) => ({ ...s, [k]: v }));
+  }
+  function setSumm<K extends keyof SummaryConfig>(k: K, v: SummaryConfig[K]) {
+    setSummary((s) => ({ ...s, [k]: v }));
   }
 
   // ---- workflow assignment helpers ----
@@ -82,6 +87,11 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
   async function saveSearch() {
     setSaving("websearch");
     await updateBot(bot.id, { websearch }, { silent: true });
+    setSaving(false);
+  }
+  async function saveSummary() {
+    setSaving("summary");
+    await updateBot(bot.id, { summary }, { silent: true });
     setSaving(false);
   }
 
@@ -339,6 +349,102 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
           <Button onClick={saveSearch} loading={saving === "websearch"}>
             <Save size={15} /> Save Web search
+          </Button>
+        </div>
+      </div>
+
+      {/* conversation summaries */}
+      <div class="setting-group">
+        <div class="setting-group-title">Conversation summaries</div>
+        <p class="field-hint" style={{ marginTop: 0, marginBottom: 10 }}>
+          Folds older messages into character-voice recaps that live in the cached system prompt, so the
+          bot keeps far more context than the verbatim window alone. Summaries are written as the character,
+          in first person, to preserve personality. Runs after each reply (no added latency).
+        </p>
+        <Toggle
+          label="Enable summaries"
+          hint="When off, messages past the rolling window are simply dropped (current behaviour)."
+          checked={summary.enabled}
+          onChange={(v) => setSumm("enabled", v)}
+        />
+        <div class="setting-row-grid">
+          <Field
+            label="Token threshold"
+            name="summaryThresholdTokens"
+            type="number"
+            min="100"
+            value={String(summary.summaryThresholdTokens)}
+            onInput={(e) =>
+              setSumm("summaryThresholdTokens", Number((e.target as HTMLInputElement).value) || 2000)
+            }
+            hint="Summarize once the pending span crosses this many tokens."
+          />
+          <Field
+            label="Max summaries per chat"
+            name="maxSummariesPerChat"
+            type="number"
+            min="1"
+            value={String(summary.maxSummariesPerChat)}
+            onInput={(e) =>
+              setSumm("maxSummariesPerChat", Number((e.target as HTMLInputElement).value) || 10)
+            }
+            hint="Oldest is dropped (FIFO) when exceeded."
+          />
+        </div>
+        <div class="setting-row-grid">
+          <Field
+            label="Rolling window (messages)"
+            name="rollingWindowMessages"
+            type="number"
+            min="0"
+            value={String(summary.rollingWindowMessages)}
+            onInput={(e) =>
+              setSumm("rollingWindowMessages", Number((e.target as HTMLInputElement).value) || 30)
+            }
+            hint="Most recent messages kept verbatim. Older fetched messages become summary input."
+          />
+          <Field
+            label="Min summary tokens"
+            name="minSummaryTokens"
+            type="number"
+            min="0"
+            value={String(summary.minSummaryTokens)}
+            onInput={(e) =>
+              setSumm("minSummaryTokens", Number((e.target as HTMLInputElement).value) || 100)
+            }
+            hint="Never summarize spans below this. Skips spam/images/attachments."
+          />
+        </div>
+        <div class="setting-row-grid">
+          <Field
+            label="Summary model"
+            name="summaryModel"
+            value={summary.summaryModel}
+            onInput={(e) => setSumm("summaryModel", (e.target as HTMLInputElement).value)}
+            placeholder="(reuse main model)"
+            hint="Optional cheaper/faster model for summaries. Blank = reuse the bot's LLM model."
+          />
+          <Field
+            label="Count fallback ratio"
+            name="countFallbackRatio"
+            type="number"
+            min="0"
+            step="0.1"
+            value={String(summary.countFallbackRatio)}
+            onInput={(e) =>
+              setSumm("countFallbackRatio", Number((e.target as HTMLInputElement).value) || 0.5)
+            }
+            hint="If short msgs never reach the token bar, summarize at this fraction of max history. 0.5 = half. Set above 1 to disable."
+          />
+        </div>
+        <p class="field-hint" style={{ marginTop: 8 }}>
+          Example: threshold 2000, history 50, fallback 0.5. If 50 short messages total only 1200 tokens,
+          a summary still fires at 25 messages (half of 50). Anything under 100 tokens is always skipped.
+          Watch the bot logs for <code>[summary]</code> lines to fine-tune these values.
+        </p>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+          <Button onClick={saveSummary} loading={saving === "summary"}>
+            <Save size={15} /> Save Summaries
           </Button>
         </div>
       </div>

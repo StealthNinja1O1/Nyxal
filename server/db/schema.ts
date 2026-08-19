@@ -15,7 +15,9 @@ import type {
   BotStatusConfig,
   ComfyUiConfig,
   WebSearchConfig,
+  SummaryConfig,
   ToolOverrides,
+  CapturedLlmMessage,
 } from "../../shared/types";
 
 export const settings = sqliteTable("settings", {
@@ -95,6 +97,7 @@ export const bots = sqliteTable("bots", {
   status: text("status", { mode: "json" }).$type<BotStatusConfig>().notNull(),
   comfyui: text("comfyui", { mode: "json" }).$type<ComfyUiConfig>().notNull(),
   websearch: text("websearch", { mode: "json" }).$type<WebSearchConfig>().notNull(),
+  summary: text("summary", { mode: "json" }).$type<SummaryConfig>().notNull(),
 
   toolOverrides: text("tool_overrides", { mode: "json" }).$type<ToolOverrides>().notNull().default({}),
   mcpServerIds: text("mcp_server_ids", { mode: "json" }).$type<string[]>().notNull().default([]),
@@ -240,5 +243,59 @@ export const toolCallLog = sqliteTable("tool_call_log", {
   depth: integer("depth").notNull().default(0), // 0 = top-level, > 0 = nested recursion
   channelId: text("channel_id"),
   messageId: text("message_id"), // the discord message that triggered the call (if known)
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+// Conversation summaries. one row per summarized segment of a channel's chat.
+// segments are the messages BETWEEN the previous watermark and the rolling
+// window edge, folded into a single character-voice recap. ordered by `seq`
+// per (bot_id, channel_id). FIFO dropped when count > max_summaries_per_chat.
+export const chatSummaries = sqliteTable("chat_summaries", {
+  id: text("id").primaryKey(),
+  botId: text("bot_id")
+    .notNull()
+    .references(() => bots.id, { onDelete: "cascade" }),
+  channelId: text("channel_id").notNull(),
+  seq: integer("seq").notNull().default(0),
+  content: text("content").notNull(),
+  // discord snowflake ids bracketing the source messages this summarizes.
+  startMessageId: text("start_message_id"),
+  endMessageId: text("end_message_id"),
+  tokenEstimate: integer("token_estimate").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+// Per-(bot, channel) summarization state. tracks the watermark so we know
+// which messages are already summarized and which are still pending.
+export const chatSummaryState = sqliteTable(
+  "chat_summary_state",
+  {
+    botId: text("bot_id")
+      .notNull()
+      .references(() => bots.id, { onDelete: "cascade" }),
+    channelId: text("channel_id").notNull(),
+    // newest message id (snowflake) fully covered by existing summaries.
+    // any fetched message with id <= this is dropped from verbatim history.
+    lastSummarizedMessageId: text("last_summarized_message_id"),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.botId, t.channelId] }),
+  }),
+);
+
+// LLM request capture. the exact message payload submitted to the provider,
+// for the "Requests" viewer tab in the bot detail UI.
+export const llmRequestCapture = sqliteTable("llm_request_capture", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  botId: text("bot_id")
+    .notNull()
+    .references(() => bots.id, { onDelete: "cascade" }),
+  source: text("source").notNull(), // chat | followup | summary
+  model: text("model").notNull(),
+  temperature: real("temperature").notNull(),
+  messages: text("messages", { mode: "json" }).$type<CapturedLlmMessage[]>().notNull(),
+  promptTokens: integer("prompt_tokens").notNull().default(0),
+  success: integer("success", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });

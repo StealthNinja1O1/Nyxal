@@ -6,6 +6,7 @@ import type {
   BotStatusConfig,
   ComfyUiConfig,
   WebSearchConfig,
+  SummaryConfig,
   ToolOverrides,
   ComfyResolvedWorkflow,
 } from "../../shared/types";
@@ -50,6 +51,7 @@ export interface BotRuntimeConfig {
   status: BotStatusConfig;
   comfyui: ComfyUiConfig;
   websearch: WebSearchConfig;
+  summary: SummaryConfig;
 
   toolOverrides: ToolOverrides;
   mcpServerIds: string[];
@@ -90,4 +92,14 @@ export const DEFAULT_WEBSEARCH: WebSearchConfig = {
   language: "auto",
   maxResults: 5,
   autoBypass: true,
+};
+
+export const DEFAULT_SUMMARY: SummaryConfig = {
+  enabled: true,
+  summaryThresholdTokens: 2000,
+  maxSummariesPerChat: 10,
+  rollingWindowMessages: 30,
+  summaryModel: "", // empty = reuse the bot's main llmModel
+  minSummaryTokens: 100,
+  countFallbackRatio: 0.5, // trigger a summary once the span reaches this fraction of maxHistoryMessages
 };

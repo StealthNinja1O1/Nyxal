@@ -4,11 +4,12 @@ import { db } from "../db";
 import { bots, llmProviders, characters, comfyuiWorkflows } from "../db/schema";
 import { eq, inArray } from "drizzle-orm";
 import type { BotRuntimeConfig } from "./botConfig";
-import { DEFAULT_STATUS, DEFAULT_COMFYUI, DEFAULT_WEBSEARCH } from "./botConfig";
+import { DEFAULT_STATUS, DEFAULT_COMFYUI, DEFAULT_WEBSEARCH, DEFAULT_SUMMARY } from "./botConfig";
 import type {
   BotStatusConfig,
   ComfyUiConfig,
   WebSearchConfig,
+  SummaryConfig,
   ComfyResolution,
   ComfyResolvedWorkflow,
 } from "../../shared/types";
@@ -55,6 +56,33 @@ export function normalizeComfyui(raw: ComfyUiConfig | null | undefined): ComfyUi
   }));
   if (converted.length === 0) return { ...base, resolutions: DEFAULT_COMFYUI.resolutions };
   return { ...base, resolutions: converted };
+}
+
+export function normalizeSummary(raw: SummaryConfig | null | undefined): SummaryConfig {
+  const d = DEFAULT_SUMMARY;
+  if (!raw || typeof raw !== "object") return { ...d };
+  return {
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : d.enabled,
+    summaryThresholdTokens:
+      typeof raw.summaryThresholdTokens === "number" && raw.summaryThresholdTokens > 0
+        ? raw.summaryThresholdTokens
+        : d.summaryThresholdTokens,
+    maxSummariesPerChat:
+      typeof raw.maxSummariesPerChat === "number" && raw.maxSummariesPerChat > 0
+        ? raw.maxSummariesPerChat
+        : d.maxSummariesPerChat,
+    rollingWindowMessages:
+      typeof raw.rollingWindowMessages === "number" && raw.rollingWindowMessages >= 0
+        ? raw.rollingWindowMessages
+        : d.rollingWindowMessages,
+    summaryModel: typeof raw.summaryModel === "string" ? raw.summaryModel : d.summaryModel,
+    minSummaryTokens:
+      typeof raw.minSummaryTokens === "number" && raw.minSummaryTokens >= 0
+        ? raw.minSummaryTokens
+        : d.minSummaryTokens,
+    countFallbackRatio:
+      typeof raw.countFallbackRatio === "number" ? raw.countFallbackRatio : d.countFallbackRatio,
+  };
 }
 
 export async function resolveBotConfig(botRow: typeof bots.$inferSelect): Promise<BotRuntimeConfig> {
@@ -112,6 +140,7 @@ export async function resolveBotConfig(botRow: typeof bots.$inferSelect): Promis
     comfyuiWorkflows: workflows,
     comfyuiDefaultWorkflow: defaultWorkflow?.content ?? null,
     websearch: (botRow.websearch ?? DEFAULT_WEBSEARCH) as WebSearchConfig,
+    summary: normalizeSummary(botRow.summary as SummaryConfig | null | undefined),
 
     toolOverrides: botRow.toolOverrides ?? {},
     mcpServerIds: botRow.mcpServerIds ?? [],
@@ -146,6 +175,7 @@ export function newBotDefaults() {
     status: DEFAULT_STATUS,
     comfyui: DEFAULT_COMFYUI,
     websearch: DEFAULT_WEBSEARCH,
+    summary: DEFAULT_SUMMARY,
     toolOverrides: {},
     mcpServerIds: [],
   };

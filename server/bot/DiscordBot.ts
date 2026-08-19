@@ -18,6 +18,7 @@ import { generateAIResponse, type PromptDeps } from "./prompt";
 import { runResponsePipeline } from "./utils/responsePipeline";
 import { MessageResponseContext } from "./utils/ResponseContexts";
 import { fetchReferencedMessage, extractImagesFromMessage, extractStickerImagesFromMessage } from "./history";
+import { maybeSummarize } from "./summary/summarizer";
 import { loadMcpCommandDefs } from "./mcp/loader";
 
 export interface DiscordBotOptions {
@@ -53,6 +54,8 @@ export class DiscordBot {
   private messageCounter = 0;
   private isBusy = new Map<string, boolean>();
   private lastResponseTimestamp = new Map<string, number>();
+  // per-channel lock so overlapping post-turn summary jobs do not run in parallel.
+  private summarizing = new Set<string>();
   botDiscordId: string | null = null;
 
   constructor(opts: DiscordBotOptions) {
@@ -185,7 +188,7 @@ export class DiscordBot {
       const stickerImages = await extractStickerImagesFromMessage(this.log, message);
       const allImages: ImageAttachment[] = [...currentImages, ...stickerImages, ...(referenced?.images || [])];
 
-      const { response, messages, model, temperature } = await generateAIResponse(
+      const { response, messages, model, temperature, fetchedWindow, userName } = await generateAIResponse(
         this.deps,
         message,
         this.character,
@@ -218,6 +221,10 @@ export class DiscordBot {
       });
 
       if (typingInterval) clearInterval(typingInterval);
+
+      // post-turn summarization (fire-and-forget, per-channel mutex). runs only
+      // after the reply is sent so the user never waits on the summary call.
+      void this.maybeRunSummary(channelId, fetchedWindow, userName);
     } catch (error) {
       if (typingInterval) clearInterval(typingInterval);
       this.setIdlePresence();
@@ -251,6 +258,40 @@ export class DiscordBot {
       return;
     }
     if (!this.messageQueue.hasPending(channelId)) this.log.debug(`Queue drained for channel ${channelId}`);
+  }
+
+  /**
+   * Post-turn summarization. Per channel locks,
+   * Uses the full fetched window from the turn as summarization input.
+   */
+  private async maybeRunSummary(
+    channelId: string,
+    fetchedWindow: import("./prompt").PromptMessage[],
+    userName: string,
+  ): Promise<void> {
+    if (!this.config.summary.enabled) return;
+    if (this.summarizing.has(channelId)) {
+      this.log.debug(`[summary] ${channelId}: skipping, another summary job already running`);
+      return;
+    }
+    this.summarizing.add(channelId);
+    try {
+      await maybeSummarize({
+        config: this.config,
+        creds: this.creds,
+        character: this.character,
+        log: this.log,
+        tokens: this.tokens,
+        botId: this.config.botId,
+        channelId,
+        messages: fetchedWindow,
+        userName,
+      });
+    } catch (err) {
+      this.log.error(`[summary] ${channelId}: unexpected error:`, err);
+    } finally {
+      this.summarizing.delete(channelId);
+    }
   }
 
   // command exec context builder. shared by chat + slash command paths.
