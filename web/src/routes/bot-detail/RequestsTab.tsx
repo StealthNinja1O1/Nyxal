@@ -156,7 +156,8 @@ function RequestMessage({
   onToggleSystem: () => void;
 }) {
   const isSystem = msg.role === "system";
-  const text = partsToText(msg.content);
+  const isTool = msg.role === "tool";
+  const text = partsToText(msg.content ?? "");
 
   if (isSystem) {
     return (
@@ -171,12 +172,14 @@ function RequestMessage({
     );
   }
 
-  const parsed = !rawMode && msg.role === "assistant" ? parseAssistant(text) : null;
+  const parsed = !rawMode && msg.role === "assistant" && !msg.tool_calls ? parseAssistant(text) : null;
 
   return (
     <div class={`req-msg ${msg.role === "assistant" ? "req-msg-assistant" : "req-msg-user"}`}>
       <div class="req-msg-head">
-        <span class={`req-role ${msg.role === "assistant" ? "req-role-assistant" : "req-role-user"}`}>{msg.role}</span>
+        <span class={`req-role ${msg.role === "assistant" ? "req-role-assistant" : "req-role-user"}`}>
+          {isTool ? `tool ${msg.tool_call_id ? `\u2192 ${msg.tool_call_id.slice(-10)}` : ""}` : msg.role}
+        </span>
       </div>
       {parsed ? (
         <div class="req-content">
@@ -196,6 +199,16 @@ function RequestMessage({
         </div>
       ) : (
         <div class={`req-content ${rawMode ? "mono" : ""}`}>{text}</div>
+      )}
+      {msg.tool_calls && msg.tool_calls.length > 0 && (
+        <div class="req-cmds">
+          {msg.tool_calls.map((tc, i) => (
+            <span key={i} class="req-cmd">
+              <Code2 size={12} style={{ verticalAlign: "-2px" }} />{" "}
+              {tc.function.name}({tc.function.arguments})
+            </span>
+          ))}
+        </div>
       )}
       {typeof msg.content !== "string" && !rawMode && (
         <div class="field-hint" style={{ marginTop: 4 }}>

@@ -20,6 +20,11 @@ type RecursiveResult = string;
 export const webSearchCommand: CommandDef<{ query: string }, RecursiveResult> = {
   name: "webSearch",
   args: { query: "string" },
+  parameters: {
+    type: "object",
+    properties: { query: { type: "string", description: "Search query" } },
+    required: ["query"],
+  },
   description: `Search the web for information using a search engine. Use this when you need factual information you are not sure about, need to look something up, or want to verify facts. Your reply before this command will be sent first, then you will receive search results and can give an informed follow-up answer.`,
   kind: "recursive",
   defaultEnabled: (config) => !!config.websearch.baseUrl,
@@ -34,6 +39,11 @@ export const webSearchCommand: CommandDef<{ query: string }, RecursiveResult> = 
 export const fetchWebpageCommand: CommandDef<{ url: string }, RecursiveResult> = {
   name: "fetchWebpage",
   args: { url: "string" },
+  parameters: {
+    type: "object",
+    properties: { url: { type: "string", description: "Full URL to fetch" } },
+    required: ["url"],
+  },
   description: `Fetch and extract the full content of a specific webpage in markdown format. Use when you have a URL and need the actual page content, not just a search snippet. Good for reading articles, documentation, or reference pages.`,
   kind: "recursive",
   defaultEnabled: (config) => !!config.websearch.baseUrl,
@@ -48,6 +58,14 @@ export const fetchWebpageCommand: CommandDef<{ url: string }, RecursiveResult> =
 export const searchAndFetchCommand: CommandDef<{ query: string; num_results?: number }, RecursiveResult> = {
   name: "searchAndFetch",
   args: { query: "string", num_results: "number (1-5, default 3)" },
+  parameters: {
+    type: "object",
+    properties: {
+      query: { type: "string", description: "Search query" },
+      num_results: { type: "number", minimum: 1, maximum: 5, description: "Results to fetch (1-5, default 3)" },
+    },
+    required: ["query"],
+  },
   description: `Search the web AND fetch full page content from the top results. More thorough than webSearch (which only returns snippets). Use when you need detailed information from multiple sources. Slower but much more comprehensive.`,
   kind: "recursive",
   defaultEnabled: (config) => !!config.websearch.baseUrl,
@@ -63,6 +81,18 @@ export const searchAndFetchCommand: CommandDef<{ query: string; num_results?: nu
 export const deepResearchCommand: CommandDef<{ queries: string[] }, RecursiveResult> = {
   name: "deepResearch",
   args: { queries: ["query1", "query2", "..."] },
+  parameters: {
+    type: "object",
+    properties: {
+      queries: {
+        type: "array",
+        items: { type: "string" },
+        maxItems: 10,
+        description: "Up to 10 search queries from different angles",
+      },
+    },
+    required: ["queries"],
+  },
   description: `Perform deep multi-query research in parallel. Provide up to 10 search queries and get a compiled research report. Best for complex topics that need multiple angles. Slowest but most thorough option.`,
   kind: "recursive",
   defaultEnabled: (config) => !!config.websearch.baseUrl,
@@ -81,6 +111,15 @@ export const crawlSiteCommand: CommandDef<
 > = {
   name: "crawlSite",
   args: { start_url: "string", max_pages: "number (1-200, default 5)", max_depth: "number (0-5, default 1)" },
+  parameters: {
+    type: "object",
+    properties: {
+      start_url: { type: "string", description: "URL to start crawling from" },
+      max_pages: { type: "number", minimum: 1, maximum: 200, description: "Page cap (default 5)" },
+      max_depth: { type: "number", minimum: 0, maximum: 5, description: "Link depth to follow (default 1)" },
+    },
+    required: ["start_url"],
+  },
   description: `Crawl an entire website recursively and extract content from multiple pages. Use for documentation sites, wikis, or when you need comprehensive info from a single source. Very slow, use only when really needed.`,
   kind: "recursive",
   defaultEnabled: (config) => !!config.websearch.baseUrl,
@@ -109,6 +148,20 @@ export const generateImageCommand: CommandDef<
       "string (optional, replaces the <PROMPT2> placeholder in workflows that have one, e.g. a negative prompt, lyrics, or a second caption)",
     orientation: "string (one of the available orientations, default: the first)",
     workflow: "string (optional, one of the available workflow names, default: the default workflow)",
+  },
+  parameters: {
+    type: "object",
+    properties: {
+      prompt: { type: "string", description: "Main prompt" },
+      prompt2: {
+        type: "string",
+        description:
+          "Optional second prompt replacing <PROMPT2> in workflows that have one (negative prompt, lyrics, second caption)",
+      },
+      orientation: { type: "string", description: "One of the orientations listed in the description" },
+      workflow: { type: "string", description: "Workflow name, when not using the default" },
+    },
+    required: ["prompt"],
   },
   description: `Generate media with the generator. What it produces depends on the workflow: images, audio (music), video, etc. The output file(s) will be sent as a follow-up message. For image workflows use Booru style tags like "1girl, smile, blue hair, medium breasts, cowboy shot, dark, simple background", natural language does not work as well. If a workflow is listed as "takes prompt2", fill its second input (e.g. negative prompt, or a music caption + lyrics) via prompt2.`,
   kind: "async",

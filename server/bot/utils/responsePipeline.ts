@@ -10,8 +10,9 @@ import { executeInstantCommands, executeAsyncCommands, type CommandContext } fro
 import type { ResponseContext } from "./ResponseContexts";
 import type { CommandRegistry, CommandExecutionContext } from "../commands";
 import type { PromptDeps } from "../prompt";
+import type { WireMessage } from "../api/llm";
 import type { CommandMetadataStore } from "../stores/commandMetadataStore";
-import type { ChatMemoryBook, RuntimeCharacter } from "../types";
+import type { ChatMemoryBook, RuntimeCharacter, BotCommand } from "../types";
 import type { Logger } from "./logger";
 
 export interface ResponsePipelineOptions {
@@ -20,7 +21,7 @@ export interface ResponsePipelineOptions {
   metadataStore: CommandMetadataStore;
   recursiveNames: string[];
   rawResponse: string;
-  llmMessages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+  llmMessages: WireMessage[];
   model: string;
   temperature: number;
   ctx: ResponseContext;
@@ -30,6 +31,8 @@ export interface ResponsePipelineOptions {
   message: Message | null;
   character: RuntimeCharacter;
   execCtx: CommandExecutionContext;
+  nativeCommands?: BotCommand[] | null;
+  initialToolTurn?: WireMessage | null;
   onAsyncStart?: () => void;
   onAsyncEnd?: () => void;
 }
@@ -51,12 +54,19 @@ export async function runResponsePipeline(opts: ResponsePipelineOptions): Promis
     message,
     character,
     execCtx,
+    nativeCommands,
+    initialToolTurn,
     onAsyncStart,
     onAsyncEnd,
   } = opts;
   const log: Logger = deps.log;
 
-  const parsed = parseAIResponse(log, rawResponse);
+  // native mode: commands come from tool_calls, not the json format. the reply
+  // text may still carry a json wrapper (character prompts can demand it) so
+  // unwrap for display but ignore any commands found inside the text.
+  const parsed = nativeCommands
+    ? { reply: parseAIResponse(log, rawResponse).reply, commands: nativeCommands, success: true, raw: rawResponse }
+    : parseAIResponse(log, rawResponse);
   const allCommands = parsed.commands || [];
 
   const commandCtx: CommandContext = { message, character, execCtx };
@@ -84,6 +94,7 @@ export async function runResponsePipeline(opts: ResponsePipelineOptions): Promis
     ctx,
     commandCtx,
     execCtx,
+    initialToolTurn,
   });
 
   if (remainingInstant.length > 0) {

@@ -88,6 +88,8 @@ export const bots = sqliteTable("bots", {
   replyToMentions: integer("reply_to_mentions", { mode: "boolean" }).notNull().default(true),
   addTimestamps: integer("add_timestamps", { mode: "boolean" }).notNull().default(true),
   addNothink: integer("add_nothink", { mode: "boolean" }).notNull().default(false),
+  // native api tool calling vs legacy json {reply,commands} format
+  toolcallMode: text("toolcall_mode").notNull().default("native"),
   enableUserStatus: integer("enable_user_status", { mode: "boolean" }).notNull().default(false),
   minResponseIntervalSeconds: integer("min_response_interval_seconds").notNull().default(0),
   maxRecursionDepth: integer("max_recursion_depth").notNull().default(2),
@@ -242,6 +244,7 @@ export const toolCallLog = sqliteTable("tool_call_log", {
   ms: integer("ms").notNull().default(0),
   depth: integer("depth").notNull().default(0), // 0 = top-level, > 0 = nested recursion
   channelId: text("channel_id"),
+  guildId: text("guild_id"), // discord guild the call happened in (null in DMs)
   messageId: text("message_id"), // the discord message that triggered the call (if known)
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });

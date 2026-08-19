@@ -229,6 +229,48 @@ export const lorebookRoutes = new Elysia({ prefix: "/api/bots/:id/lorebook" })
     return { ok: true };
   })
 
+  // move an entry between books (static <-> memory), keeping its id + all fields
+  // POST /api/bots/:id/lorebook/:book/:entryId/move   body: { to: "static" | "memory" }
+  .post(
+    "/:book/:entryId/move",
+    async ({ params, body, set }) => {
+      if (params.book !== "static" && params.book !== "memory") {
+        set.status = 400;
+        return { error: "book must be 'static' or 'memory'" };
+      }
+      if (body.to !== "static" && body.to !== "memory") {
+        set.status = 400;
+        return { error: "to must be 'static' or 'memory'" };
+      }
+      if (body.to === params.book) {
+        set.status = 400;
+        return { error: `entry is already in the ${params.book} book` };
+      }
+      const src = tableFor(params.book);
+      const dst = tableFor(body.to);
+      const [existing] = await db
+        .select()
+        .from(src)
+        .where(and(eq(src.id, params.entryId), eq(src.botId, params.id)));
+      if (!existing) {
+        set.status = 404;
+        return { error: "Entry not found" };
+      }
+      await db.insert(dst).values({ ...existing, updatedAt: new Date() });
+      await db.delete(src).where(eq(src.id, params.entryId));
+      // a move crosses both books, so refresh both in-memory copies
+      await botManager.refreshCharacter(params.id).catch(() => {});
+      await botManager.refreshMemory(params.id).catch(() => {});
+      const [moved] = await db.select().from(dst).where(eq(dst.id, params.entryId));
+      return { ok: true, entry: moved ? rowToWire(moved) : null };
+    },
+    {
+      body: t.Object({
+        to: t.Union([t.Literal("static"), t.Literal("memory")]),
+      }),
+    },
+  )
+
   //  bulk import (parsed client-side) 
   // mode: "merge" (default) keeps existing entries, "replace" wipes the book first
   .post(

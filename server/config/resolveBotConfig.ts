@@ -128,6 +128,7 @@ export async function resolveBotConfig(botRow: typeof bots.$inferSelect): Promis
     replyToMentions: botRow.replyToMentions,
     addTimestamps: botRow.addTimestamps,
     addNothink: botRow.addNothink,
+    toolcallMode: botRow.toolcallMode === "json" ? "json" : "native",
     enableUserStatus: botRow.enableUserStatus,
     minResponseIntervalSeconds: botRow.minResponseIntervalSeconds,
     maxRecursionDepth: botRow.maxRecursionDepth,

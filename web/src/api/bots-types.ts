@@ -37,6 +37,7 @@ export interface Bot {
   replyToMentions: boolean;
   addTimestamps: boolean;
   addNothink: boolean;
+  toolcallMode: "native" | "json";
   enableUserStatus: boolean;
   minResponseIntervalSeconds: number;
   maxRecursionDepth: number;
@@ -83,6 +84,7 @@ export type BotPatch = Partial<{
   replyToMentions: boolean;
   addTimestamps: boolean;
   addNothink: boolean;
+  toolcallMode: "native" | "json";
   enableUserStatus: boolean;
   minResponseIntervalSeconds: number;
   maxRecursionDepth: number;

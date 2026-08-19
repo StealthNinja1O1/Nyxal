@@ -44,6 +44,9 @@ export interface CommandDef<
   description: string;
   kind: CommandKind;
   defaultEnabled: (config: BotRuntimeConfig) => boolean;
+  /** real JSON Schema for native tool calling. when absent, one is
+   *  synthesized from the `args` hint map as a fallback. */
+  parameters?: Record<string, unknown>;
   execute: (args: TArgs, ctx: CommandExecutionContext) => Promise<TResult>;
 }
 

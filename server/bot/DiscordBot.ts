@@ -8,7 +8,7 @@ import type { Logger } from "./utils/logger";
 import { makeTokenCounter } from "./utils/tokenCounter";
 import { CommandMetadataStore } from "./stores/commandMetadataStore";
 import { upsertMemoryEntry } from "./stores/memoryStore";
-import { buildRegistry, availableCommandsFromRegistry, BUILTIN_COMMANDS } from "./commands";
+import { buildRegistry, availableCommandsFromRegistry, nativeToolsFromRegistry, BUILTIN_COMMANDS } from "./commands";
 import type { CommandDef, CommandRegistry, CommandExecutionContext } from "./commands";
 import { CommandHandler } from "./commands/CommandHandler";
 import { MessageQueue } from "./MessageQueue";
@@ -39,6 +39,8 @@ export class DiscordBot {
   registry: CommandRegistry = buildRegistry();
   recursiveNames: string[];
   availableCommands: Record<string, unknown>[];
+  // native tool defs for the api `tools` field, rebuilt with availableCommands.
+  nativeTools: import("./api/llm").NativeToolDef[];
   // current MCP defs registered on the bot (for diffing on hot reload).
   private mcpDefs: CommandDef[] = [];
   readonly creds: LlmCreds;
@@ -68,6 +70,7 @@ export class DiscordBot {
     this.metadataStore = new CommandMetadataStore(this.config.botId, this.log);
     this.recursiveNames = this.registry.recursiveNames(this.config, this.config.toolOverrides);
     this.availableCommands = availableCommandsFromRegistry(this.registry, this.config, this.config.toolOverrides);
+    this.nativeTools = nativeToolsFromRegistry(this.registry, this.config, this.config.toolOverrides);
 
     this.creds = {
       baseUrl: this.config.llmBaseUrl,
@@ -82,6 +85,7 @@ export class DiscordBot {
       tokens: this.tokens,
       metadataStore: this.metadataStore,
       availableCommands: this.availableCommands,
+      tools: this.nativeTools,
     };
 
     this.messageQueue = new MessageQueue(this.log);
@@ -188,15 +192,16 @@ export class DiscordBot {
       const stickerImages = await extractStickerImagesFromMessage(this.log, message);
       const allImages: ImageAttachment[] = [...currentImages, ...stickerImages, ...(referenced?.images || [])];
 
-      const { response, messages, model, temperature, fetchedWindow, userName } = await generateAIResponse(
-        this.deps,
-        message,
-        this.character,
-        this.botDiscordId,
-        replyContext,
-        allImages,
-        this.chatMemoryBook,
-      );
+      const { response, messages, model, temperature, fetchedWindow, userName, toolCallCommands, toolTurn } =
+        await generateAIResponse(
+          this.deps,
+          message,
+          this.character,
+          this.botDiscordId,
+          replyContext,
+          allImages,
+          this.chatMemoryBook,
+        );
       this.log.debug(`Raw LLM response: ${response}`);
 
       const ctx = new MessageResponseContext(message);
@@ -206,6 +211,8 @@ export class DiscordBot {
         metadataStore: this.metadataStore,
         recursiveNames: this.recursiveNames,
         rawResponse: response,
+        nativeCommands: toolCallCommands,
+        initialToolTurn: toolTurn,
         llmMessages: messages,
         model,
         temperature,
@@ -381,7 +388,9 @@ export class DiscordBot {
   private refreshCommandLists(): void {
     this.availableCommands = availableCommandsFromRegistry(this.registry, this.config, this.config.toolOverrides);
     this.recursiveNames = this.registry.recursiveNames(this.config, this.config.toolOverrides);
+    this.nativeTools = nativeToolsFromRegistry(this.registry, this.config, this.config.toolOverrides);
     this.deps.availableCommands = this.availableCommands;
+    this.deps.tools = this.nativeTools;
   }
 
   applyConfigUpdate(config: BotRuntimeConfig): void {

@@ -206,7 +206,33 @@ export function ToolCallsRoute() {
                                 </div>
                               )}
                               <div class="tool-call-detail-meta">
-                                {c.channelId && <span>channel: <code>{c.channelId}</code></span>}
+                                {c.guildId && c.channelId && c.messageId ? (
+                                  <span>
+                                    context:{" "}
+                                    <a
+                                      class="muted-link"
+                                      href={`https://discord.com/channels/${c.guildId}/${c.channelId}/${c.messageId}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      jump to message
+                                    </a>
+                                  </span>
+                                ) : c.guildId && c.channelId ? (
+                                  <span>
+                                    channel:{" "}
+                                    <a
+                                      class="muted-link"
+                                      href={`https://discord.com/channels/${c.guildId}/${c.channelId}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      {c.channelId}
+                                    </a>
+                                  </span>
+                                ) : (
+                                  c.channelId && <span>channel: <code>{c.channelId}</code></span>
+                                )}
                                 {c.depth > 0 && <span>depth: {c.depth}</span>}
                                 {c.messageId && <span>message: <code>{c.messageId}</code></span>}
                               </div>

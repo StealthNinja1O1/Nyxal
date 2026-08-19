@@ -1,0 +1,1 @@
+ALTER TABLE `bots` ADD `toolcall_mode` text DEFAULT 'native' NOT NULL;

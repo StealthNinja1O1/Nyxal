@@ -1,7 +1,8 @@
 import type { Message as DiscordMessage, ActivityType, Collection, GuildEmoji, Sticker } from "discord.js";
 import type { BotRuntimeConfig } from "../config/botConfig";
 import type { LlmCreds } from "./api/llm";
-import { generateResponse } from "./api/llm";
+import { generateResponse, generateToolResponse } from "./api/llm";
+import type { NativeToolDef, ToolCallWire, WireMessage } from "./api/llm";
 import { describeImages, formatImageDescriptions } from "./api/vision";
 import {
   fetchMessageHistory,
@@ -11,7 +12,7 @@ import { processLorebook } from "./lorebook/lorebook";
 import { parseLorebook } from "./lorebook/normalizeLorebook";
 import { loadSummaryState, loadSummaries, snowflakeLte } from "./stores/summaryStore";
 import type { CharacterBook, CharacterBookEntry } from "./lorebook/types";
-import type { ChatMemoryBook, ImageAttachment, ReactionInfo } from "./types";
+import type { ChatMemoryBook, ImageAttachment, ReactionInfo, BotCommand } from "./types";
 import type { CommandMetadataStore } from "./stores/commandMetadataStore";
 import type { Logger } from "./utils/logger";
 
@@ -30,11 +31,16 @@ export interface PromptMessage {
 
 export interface GenerateAIResponseResult {
   response: string;
-  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+  messages: WireMessage[];
   model: string;
   temperature: number;
   fetchedWindow: PromptMessage[]; // fetched+formatted message window, incl trigger msg
   userName: string;
+  /** native mode: commands parsed off the response's tool_calls (null in json mode) */
+  toolCallCommands: BotCommand[] | null;
+  /** native mode: the assistant turn as wire data (content + tool_calls), for
+   *  appending to a tool chain. null when it made no tool calls. */
+  toolTurn: WireMessage | null;
 }
 
 interface GuildInfo {
@@ -70,9 +76,11 @@ export interface PromptDeps {
   tokens: TokenCounter;
   metadataStore: CommandMetadataStore;
   availableCommands: Record<string, unknown>[];
+  /** native tool calling defs. absent/empty = fall back to the json format. */
+  tools?: NativeToolDef[];
 }
 
-export const PROMPT_TEMPLATE = `You are Assistant. Your task is to simulate a chat with {{user}} and other discord members, Follow information from these sections to do your task well:
+const TEMPLATE_HEAD = `You are Assistant. Your task is to simulate a chat with {{user}} and other discord members, Follow information from these sections to do your task well:
 
 1. <rules>: Writing instructions.
 2. <lore>: World and character details.
@@ -109,7 +117,9 @@ Follow these content guidelines:
 - Use character repetition, uppercase, symbols like "~", "\u2661" etc. Emojis are allowed within dialogue.
 - Have fun! Be creative! Amusing writing and colorful metaphors are welcome.
 
-[Reply only in the following json format:
+`;
+
+const JSON_FORMAT_BLOCK = `[Reply only in the following json format:
 \`\`\`json
 {
   "reply": "The next message from {{char}} following the above rules. Include only the message content, without narration or description. Use markdown formatting as you see fit.",
@@ -121,8 +131,15 @@ Available commands are:
 Use them by adding "commands":[{name:"commandName", "args":{"arg1":"value"}}] in your response. Follow the command descriptions and argument requirements precisely when using them.
 Multiple commands can be used at once by adding more objects to the "commands" array. If you don't want to use any commands, just return an empty array. Always return valid JSON, never deviate from the format or add commentary outside of it.
 Your message history will show the commands you previously used (like reactions). Always fully write out any new commands you want to use in the "commands" array.
-]
+]`;
 
+// native tool calling variant: no json format block, tools are declared via
+// the api `tools` field instead (saves prompt tokens too).
+const NATIVE_TOOLS_BLOCK = `[Tools]
+You have tools available through the model's native tool calling mechanism (their names, descriptions and parameter schemas are provided as structured tools alongside this prompt). Call them by emitting tool calls. Instant tools (react, renames, lorebook edits etc) execute immediately, async tools (like image generation) execute after your reply is posted, and recursive tools (web search etc) execute right away with their results returned to you as tool responses so you can act on them and follow up. Use tools whenever they help, but never fabricate a tool result and never claim you did something without calling its tool.
+]`;
+
+const TEMPLATE_TAIL = `
 Image attachments like [Attached image: ...] are images sent by either yourself or the user, transcribed to text so you can understand it. This is not written by the user but generated. DO not assume they wrote it.
 </rules>
 <lore>
@@ -143,26 +160,30 @@ A member of the discord server {{serverName}} in channel {{channelName}} named {
 
 {History start}`;
 
+export const PROMPT_TEMPLATE = TEMPLATE_HEAD + JSON_FORMAT_BLOCK + TEMPLATE_TAIL;
+export const PROMPT_TEMPLATE_NATIVE = TEMPLATE_HEAD + NATIVE_TOOLS_BLOCK + TEMPLATE_TAIL;
+
 export async function buildAIRequest(
   deps: PromptDeps,
   opts: BuildPromptOptions,
 ): Promise<{
   model: string;
-  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+  messages: WireMessage[];
   temperature: number;
   character: string;
 }> {
   const { config, log, tokens, metadataStore, availableCommands } = deps;
   const { character, messages, userName = "User", guildInfo, replyContext, chatMemoryBook, summaries } = opts;
 
+  const nativeMode = config.toolcallMode === "native";
   const charName = character.name || "Character";
   const charDescription = character.description;
   const charExamples = character.mesExample || "";
 
-  const aiMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+  const aiMessages: WireMessage[] = [
     {
       role: "system",
-      content: (character.systemPrompt ?? PROMPT_TEMPLATE).replace(
+      content: (character.systemPrompt ?? (nativeMode ? PROMPT_TEMPLATE_NATIVE : PROMPT_TEMPLATE)).replace(
         "{{availableCommands}}",
         availableCommands.map((c) => JSON.stringify(c)).join("\n"),
       ),
@@ -213,10 +234,22 @@ export async function buildAIRequest(
       }
     }
 
-    // assistant messages are forced into valid json, with stored commands replayed
+    // assistant messages are forced into valid json, with stored commands replayed.
+    // in native mode the commands instead ride on the message as real
+    // tool_calls, each followed by a role:"tool" stub (results are not stored
+    // cross-turn, so earlier tool results say so).
+    let msgToolCalls: ToolCallWire[] | null = null;
     if (msg.role === "assistant") {
       const storedCommands = msg.id ? (storedCommandsMap.get(msg.id) ?? []) : [];
-      finaltext = JSON.stringify({ reply: finaltext, commands: storedCommands });
+      if (nativeMode) {
+        msgToolCalls = storedCommands.map((c, i) => ({
+          id: `call_${msg.id}_${i}`,
+          type: "function" as const,
+          function: { name: c.name, arguments: JSON.stringify(c.args ?? {}) },
+        }));
+      } else {
+        finaltext = JSON.stringify({ reply: finaltext, commands: storedCommands });
+      }
 
       if (msg.reactions && msg.reactions.length > 0) {
         pendingAssistantReactions = msg.reactions
@@ -228,7 +261,17 @@ export async function buildAIRequest(
       }
     }
 
-    aiMessages.push({ role: msg.role, content: finaltext });
+    if (msgToolCalls && msgToolCalls.length > 0) {
+      aiMessages.push({ role: "assistant", content: finaltext, tool_calls: msgToolCalls });
+      for (const tc of msgToolCalls)
+        aiMessages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: "[tool result from an earlier turn, not stored]",
+        });
+    } else {
+      aiMessages.push({ role: msg.role, content: finaltext });
+    }
   });
 
   // depth_prompt insertion (count back, treating consecutive assistant turns as one)
@@ -335,7 +378,8 @@ export async function buildAIRequest(
   };
 
   aiMessages.forEach((msg) => {
-    msg.content = replacePlaceholders(msg.content, replacements);
+    // system + text turns are plain strings; image-part contents have nothing to replace
+    if (typeof msg.content === "string") msg.content = replacePlaceholders(msg.content, replacements);
   });
 
   return { model: config.llmModel, messages: aiMessages, temperature, character: charName };
@@ -359,7 +403,8 @@ export async function trimMessagesToTokenBudget(
   summaries: string[] = [],
 ): Promise<PromptMessage[]> {
   const initial = await buildAIRequest(deps, { character, messages: [], userName, summaries });
-  const systemPromptTokens = deps.tokens.count(initial.messages[0]!.content);
+  const sysContent = initial.messages[0]!.content;
+  const systemPromptTokens = deps.tokens.count(typeof sysContent === "string" ? sysContent : "");
   let available = maxContextTokens - systemPromptTokens;
 
   const trimmed: PromptMessage[] = [];
@@ -485,28 +530,76 @@ export async function generateAIResponse(
       }
     }
 
+    // native tool calling: one request with the tools field; the caller decides
+    // (via the recursion loop) whether any follow-up requests happen. identical
+    // cost shape to json mode.
+    if (config.toolcallMode === "native" && deps.tools && deps.tools.length > 0) {
+      const res = await generateToolResponse(
+        creds,
+        log,
+        model,
+        messages,
+        temperature,
+        config.addNothink,
+        deps.tools,
+        "chat",
+        finalImages,
+      );
+      const toolCallCommands: BotCommand[] = res.toolCalls.map((tc) => ({ name: tc.name, args: tc.args }));
+      const toolTurn: WireMessage | null =
+        res.toolCalls.length > 0
+          ? {
+              role: "assistant",
+              content: res.content,
+              tool_calls: res.toolCalls.map((tc) => ({
+                id: tc.id,
+                type: "function" as const,
+                function: { name: tc.name, arguments: tc.arguments },
+              })),
+            }
+          : null;
+      return {
+        response: res.content,
+        messages,
+        model,
+        temperature,
+        fetchedWindow: allMessages,
+        userName: userDisplayName,
+        toolCallCommands,
+        toolTurn,
+      };
+    }
+
     const response = await generateResponse(creds, log, model, messages, temperature, config.addNothink, finalImages, "chat");
-    return { response, messages, model, temperature, fetchedWindow: allMessages, userName: userDisplayName };
+    return {
+      response,
+      messages,
+      model,
+      temperature,
+      fetchedWindow: allMessages,
+      userName: userDisplayName,
+      toolCallCommands: null,
+      toolTurn: null,
+    };
   } catch (error) {
     log.error("Error generating AI response:", error);
     throw error;
   }
 }
 
+/**
+ * Send a follow-up turn for a recursive tool chain. `messages` is the FULL
+ * accumulated chain (original request + prior assistant turns + tool results
+ * + the new exchange) - the caller owns chain accumulation so depth N can
+ * see depth N-1's results.
+ */
 export async function generateFollowUpResponse(
   deps: PromptDeps,
-  previousMessages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+  messages: WireMessage[],
   model: string,
   temperature: number,
-  assistantReply: string,
-  toolResultContent: string,
   noThink: boolean,
 ): Promise<string> {
-  const messages = [
-    ...previousMessages,
-    { role: "assistant" as const, content: assistantReply },
-    { role: "user" as const, content: toolResultContent },
-  ];
   deps.log.debug(`Sending follow-up with ${messages.length} messages to LLM (${model})`);
   return generateResponse(deps.creds, deps.log, model, messages, temperature, noThink, [], "followup");
 }

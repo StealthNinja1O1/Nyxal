@@ -15,12 +15,15 @@ export function buildSummaryPrompt(
   const charDescription = character.description || "";
   const charPersona = character.systemPrompt || "";
 
-  const transcript = segment
+  const lines = segment
     .map((m) => {
+      const text = stripSpeakerPrefix(m.content).trim();
+      if (!text) return null;
       const role = m.role === "assistant" ? charName : m.content.split(":")[0]?.trim() || userName;
-      return `${role}: ${stripSpeakerPrefix(m.content)}`;
+      return `${role}: ${text}`;
     })
-    .join("\n");
+    .filter((line): line is string => line !== null);
+  const transcript = lines.length > 0 ? lines.join("\n\n") : "(no text messages in this segment)";
 
   const priorBlock =
     priorSummaries.length > 0

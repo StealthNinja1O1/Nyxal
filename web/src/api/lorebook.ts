@@ -10,6 +10,11 @@ export const lorebookApi = {
     http.patch<LorebookEntryWire>(`/bots/${botId}/lorebook/${book}/${entryId}`, patch),
   remove: (botId: string, book: Book, entryId: string) =>
     http.del<{ ok: true }>(`/bots/${botId}/lorebook/${book}/${entryId}`),
+  move: (botId: string, book: Book, entryId: string, to: Book) =>
+    http.post<{ ok: true; entry: LorebookEntryWire | null }>(
+      `/bots/${botId}/lorebook/${book}/${entryId}/move`,
+      { to },
+    ),
   import: (botId: string, book: Book, entries: NewEntry[], mode: "merge" | "replace") =>
     http.post<{ ok: true; imported: number }>(
       `/bots/${botId}/lorebook/${book}/import`,

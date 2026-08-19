@@ -3,7 +3,7 @@
 // is the book param + a help-string; everything else is identical.
 
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { Plus, Pencil, Trash2, BookOpen, Brain, ArrowDownUp, RotateCw } from "lucide-react";
+import { Plus, Pencil, Trash2, BookOpen, Brain, ArrowRight, ArrowDownUp, RotateCw } from "lucide-react";
 import { lorebookApi } from "../../api/lorebook";
 import type { LorebookEntryWire, NewEntry, Book } from "../../api/lorebook-types";
 import { newEntryDefaults } from "../../api/lorebook-types";
@@ -41,6 +41,7 @@ export function LorebookTab({ botId, book }: Props) {
   });
   const [confirmDel, setConfirmDel] = useState<LorebookEntryWire | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [movingId, setMovingId] = useState<string | null>(null);
 
   const sortedEntries = useMemo(() => {
     const arr = [...entries];
@@ -118,7 +119,20 @@ export function LorebookTab({ botId, book }: Props) {
       toast.show(`Delete failed: ${msg(err)}`, "error");
     }
   }
-
+  async function moveEntry(entry: LorebookEntryWire) {
+    const to: Book = book === "memory" ? "static" : "memory";
+    const toLabel = to === "memory" ? "memory book" : "static lorebook";
+    setMovingId(entry.id);
+    try {
+      await lorebookApi.move(botId, book, entry.id, to);
+      setEntries((es) => es.filter((e) => e.id !== entry.id));
+      toast.show(`Moved "${entry.name}" to ${toLabel}`, "success");
+    } catch (err) {
+      toast.show(`Move failed: ${msg(err)}`, "error");
+    } finally {
+      setMovingId(null);
+    }
+  }
   async function doImport(mode: "merge" | "replace", text: string, filename: string) {
     try {
       // accept either a chatMemory.json shape or a character card book
@@ -228,6 +242,17 @@ export function LorebookTab({ botId, book }: Props) {
                   <div class="entry-preview">{entry.content.slice(0, 160)}{entry.content.length > 160 ? "..." : ""}</div>
                 </div>
                 <div class="list-row-actions">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    loading={movingId === entry.id}
+                    disabled={movingId !== null && movingId !== entry.id}
+                    onClick={() => void moveEntry(entry)}
+                    aria-label={`Move ${entry.name} to ${isMemory ? "static lorebook" : "memory book"}`}
+                    title={`Move to ${isMemory ? "static lorebook (permanent, read-only to the bot)" : "memory book (bot-writable)"}`}
+                  >
+                    {isMemory ? <BookOpen size={14} /> : <ArrowRight size={14} />}
+                  </Button>
                   <Button variant="ghost" size="sm" onClick={() => setEditing({ open: true, entry })} aria-label="Edit">
                     <Pencil size={14} />
                   </Button>

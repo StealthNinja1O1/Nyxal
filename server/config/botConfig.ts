@@ -5,6 +5,7 @@
 import type {
   BotStatusConfig,
   ComfyUiConfig,
+  ToolcallMode,
   WebSearchConfig,
   SummaryConfig,
   ToolOverrides,
@@ -43,6 +44,7 @@ export interface BotRuntimeConfig {
   replyToMentions: boolean;
   addTimestamps: boolean;
   addNothink: boolean;
+  toolcallMode: ToolcallMode;
   enableUserStatus: boolean;
   minResponseIntervalSeconds: number;
   maxRecursionDepth: number;

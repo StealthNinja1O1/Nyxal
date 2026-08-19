@@ -30,6 +30,7 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
   const [minInterval, setMinInterval] = useState(bot.minResponseIntervalSeconds);
   const [maxRecursion, setMaxRecursion] = useState(bot.maxRecursionDepth);
   const [logLevel, setLogLevel] = useState(bot.logLevel);
+  const [toolcallMode, setToolcallMode] = useState<"native" | "json">(bot.toolcallMode ?? "native");
 
   // presence / activity blob (status) - saved together with the rest of
   // behavior in the single unified save() call.
@@ -82,6 +83,7 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
       minResponseIntervalSeconds: minInterval,
       maxRecursionDepth: maxRecursion,
       logLevel,
+      toolcallMode,
       ignoreOtherBots: toggles.ignoreOtherBots,
       replyToMentions: toggles.replyToMentions,
       addTimestamps: toggles.addTimestamps,
@@ -355,6 +357,20 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
               <option value="ERROR">ERROR</option>
             </select>
           </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="toolcallMode">Tool calling</label>
+          <select
+            id="toolcallMode"
+            class="field-input"
+            value={toolcallMode}
+            onChange={(e) => setToolcallMode((e.target as HTMLSelectElement).value as "native" | "json")}
+          >
+            <option value="native">Native (recommended)</option>
+            <option value="json">JSON format (legacy models)</option>
+          </select>
+          <p class="field-hint">Native uses the OpenAI-style tools API field. Switch to JSON only for models without native tool calling. Live-apply, and cost is identical either way.</p>
         </div>
       </div>
 

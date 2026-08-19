@@ -11,6 +11,7 @@ import { toolCallLog } from "../db/schema";
 export interface ToolCallContext {
   botId: string;
   channelId?: string | null;
+  guildId?: string | null;
   messageId?: string | null;
   depth?: number;
 }
@@ -63,6 +64,7 @@ export async function logToolCall<T>(
         ms,
         depth: ctx.depth ?? 0,
         channelId: ctx.channelId ?? null,
+        guildId: ctx.guildId ?? null,
         messageId: ctx.messageId ?? null,
         createdAt: new Date(startedAt),
       })

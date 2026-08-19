@@ -1,0 +1,1 @@
+ALTER TABLE `tool_call_log` ADD `guild_id` text;

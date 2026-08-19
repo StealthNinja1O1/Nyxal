@@ -37,6 +37,8 @@ export function buildMcpCommandDef(server: McpServerRef, tool: McpToolDef): Comm
   return {
     name: mcpCommandName(server.name, tool.name),
     args: schemaToArgs(tool.inputSchema),
+    // mcp input schemas are already proper json schemas, pass straight through
+    parameters: tool.inputSchema,
     description: `[MCP ${server.name}] ${tool.description || "(no description provided)"}`,
     kind: "recursive",
     defaultEnabled: () => true,

@@ -30,6 +30,13 @@ export async function react(args: { emoji: string }, message: Message | null): P
 export const reactCommand: CommandDef<{ emoji: string }> = {
   name: "react",
   args: { emoji: "string" },
+  parameters: {
+    type: "object",
+    properties: {
+      emoji: { type: "string", description: "Emoji to react with. Unicode emoji, or custom format emojiName:emojiId." },
+    },
+    required: ["emoji"],
+  },
   description:
     "React to the previous message with the specified emoji. Use official Discord emojis or custom ones from the server (format: emojiName:emojiId).",
   kind: "instant",
@@ -110,6 +117,13 @@ export async function setBio(
 export const renameSelfCommand: CommandDef<{ newName: string }> = {
   name: "renameSelf",
   args: { newName: "string" },
+  parameters: {
+    type: "object",
+    properties: {
+      newName: { type: "string", description: "New nickname" },
+    },
+    required: ["newName"],
+  },
   description: "Change {{char}}'s nickname in the server to the specified newName.",
   kind: "instant",
   defaultEnabled: () => true,
@@ -119,6 +133,14 @@ export const renameSelfCommand: CommandDef<{ newName: string }> = {
 export const renameUserCommand: CommandDef<{ userId: string; newName: string }> = {
   name: "renameUser",
   args: { userId: "string", newName: "string" },
+  parameters: {
+    type: "object",
+    properties: {
+      userId: { type: "string", description: "Target user id or <@id> mention" },
+      newName: { type: "string", description: "New nickname for the user" },
+    },
+    required: ["userId", "newName"],
+  },
   description: "Change the nickname of the specified user in the server to newName.",
   kind: "instant",
   defaultEnabled: () => true,
@@ -129,6 +151,13 @@ export const renameUserCommand: CommandDef<{ userId: string; newName: string }> 
 export const setBioCommand: CommandDef<{ bio: string }> = {
   name: "setBio",
   args: { bio: "string (max 190 characters)" },
+  parameters: {
+    type: "object",
+    properties: {
+      bio: { type: "string", maxLength: 190, description: "New about-me text (max 190 characters)" },
+    },
+    required: ["bio"],
+  },
   description: `Set {{char}}'s about me / bio text on their server profile`,
   kind: "instant",
   defaultEnabled: () => true,
@@ -159,6 +188,13 @@ export async function postSticker(args: { stickerName: string }, message: Messag
 export const postStickerCommand: CommandDef<{ stickerName: string }> = {
   name: "postSticker",
   args: { stickerName: "string" },
+  parameters: {
+    type: "object",
+    properties: {
+      stickerName: { type: "string", description: "Exact sticker name from the available stickers list" },
+    },
+    required: ["stickerName"],
+  },
   description: "Send a sticker from the server. Use the exact sticker name from the available stickers list.",
   kind: "instant",
   defaultEnabled: () => true,
@@ -173,6 +209,19 @@ export const editOrAddToLorebookCommand: CommandDef<{
 }> = {
   name: "editOrAddToLorebook",
   args: { entryName: "string", keywords: ["name1", "..."], content: "string" },
+  parameters: {
+    type: "object",
+    properties: {
+      entryName: { type: "string", description: "Name of the memory entry to create or update" },
+      keywords: {
+        type: "array",
+        items: { type: "string" },
+        description: "Trigger keywords. Smart to include userid, username, displayname and nicknames.",
+      },
+      content: { type: "string", description: "Entry content" },
+    },
+    required: ["entryName", "keywords", "content"],
+  },
   description: `You can create or update existing lorebook entries about people or things you learn. Do this when you learn something new about a user.
       You can also add entries but please only update entries that you can see the value of.
       Keywords are what trigger the entry to be included in context, so use them wisely, its smart to add userid, username and displayname, along with possible nicknames or descriptive keywords.`,

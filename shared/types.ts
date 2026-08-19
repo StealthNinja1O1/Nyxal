@@ -94,6 +94,11 @@ export interface WebSearchConfig {
   autoBypass: boolean;
 }
 
+/** how the bot talks tools with the llm. native = openai-style api tool
+ *  calling (tools field + tool_calls + role:"tool" results). json = the
+ *  legacy diy format where the model replies {reply, commands} as json. */
+export type ToolcallMode = "native" | "json";
+
 export interface SummaryConfig {
   enabled: boolean;
   summaryThresholdTokens: number;
@@ -116,9 +121,17 @@ export interface CapturedMessagePart {
   text?: string;
   note?: string; // placeholder shown instead of base64 image data
 }
+/** native tool call as it appears on a captured assistant message */
+export interface CapturedToolCall {
+  id: string;
+  type: string;
+  function: { name: string; arguments: string };
+}
 export interface CapturedLlmMessage {
   role: string;
-  content: string | CapturedMessagePart[];
+  content: string | CapturedMessagePart[] | null;
+  tool_calls?: CapturedToolCall[];
+  tool_call_id?: string;
 }
 export interface LlmRequestCapture {
   id: number;

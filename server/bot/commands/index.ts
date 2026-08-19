@@ -5,6 +5,7 @@
 
 import type { ToolOverrides } from "../../../shared/types";
 import type { BotRuntimeConfig } from "../../config/botConfig";
+import type { NativeToolDef } from "../api/llm";
 import { CommandRegistry, type CommandDef } from "./registry";
 import {
   reactCommand,
@@ -102,6 +103,39 @@ function describeGenerateImage(config: BotRuntimeConfig, base: string): string {
       );
   }
   return lines.join("\n");
+}
+
+/** synthesize a loose all-strings schema from the legacy `args` hint map.
+ *  only used for defs without hand-written parameters. */
+function synthSchema(args: Record<string, unknown>): Record<string, unknown> {
+  const props: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(args)) {
+    props[k] = typeof v === "string" ? { type: "string", description: v } : { type: "string" };
+  }
+  return { type: "object", properties: props };
+}
+
+function toNativeTool(c: CommandDef<any>, config: BotRuntimeConfig, o?: ToolOverrides[string]): NativeToolDef {
+  let description = o?.description ?? c.description;
+  if (c.name === "generateImage" && !o?.description) description = describeGenerateImage(config, c.description);
+  return {
+    type: "function",
+    function: {
+      name: c.name,
+      description,
+      parameters: c.parameters ?? synthSchema(c.args),
+    },
+  };
+}
+
+/** the `tools` field for native tool calling, derived from an already-built
+ *  registry (so MCP defs merged into the live bot are included). */
+export function nativeToolsFromRegistry(
+  registry: CommandRegistry,
+  config: BotRuntimeConfig,
+  overrides: ToolOverrides = {},
+): NativeToolDef[] {
+  return registry.enabledCommands(config, overrides).map((c) => toNativeTool(c, config, overrides[c.name]));
 }
 
 // commands to advertise in the system prompt (only enabled ones after

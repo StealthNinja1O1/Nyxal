@@ -48,6 +48,7 @@ export async function executeInstantCommands(
         {
           botId: context.execCtx.botId,
           channelId: context.message?.channelId ?? null,
+          guildId: context.message?.guild?.id ?? null,
           messageId: context.message?.id ?? null,
         },
         async () => {
@@ -65,6 +66,7 @@ export async function executeInstantCommands(
         {
           botId: context.execCtx.botId,
           channelId: context.message?.channelId ?? null,
+          guildId: context.message?.guild?.id ?? null,
           messageId: context.message?.id ?? null,
         },
         () => def.execute(cmd.args as Record<string, unknown>, context.execCtx) as Promise<CommandResult>,
@@ -98,6 +100,7 @@ export async function executeAsyncCommands(
         {
           botId: context.execCtx.botId,
           channelId: context.message?.channelId ?? null,
+          guildId: context.message?.guild?.id ?? null,
           messageId: context.message?.id ?? null,
         },
         async () => {
@@ -115,6 +118,7 @@ export async function executeAsyncCommands(
         {
           botId: context.execCtx.botId,
           channelId: context.message?.channelId ?? null,
+          guildId: context.message?.guild?.id ?? null,
           messageId: context.message?.id ?? null,
         },
         () => def.execute(cmd.args as Record<string, unknown>, context.execCtx) as Promise<AsyncCommandResult>,

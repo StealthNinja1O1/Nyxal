@@ -14,6 +14,7 @@ export interface ToolCall {
   ms: number;
   depth: number;
   channelId: string | null;
+  guildId: string | null;
   messageId: string | null;
   createdAt: number;
 }

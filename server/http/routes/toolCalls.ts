@@ -58,6 +58,7 @@ export const toolCallRoutes = new Elysia({ prefix: "/api/tool-calls" })
           ms: toolCallLog.ms,
           depth: toolCallLog.depth,
           channelId: toolCallLog.channelId,
+          guildId: toolCallLog.guildId,
           messageId: toolCallLog.messageId,
           createdAt: toolCallLog.createdAt,
         })
