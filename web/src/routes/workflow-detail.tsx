@@ -2,7 +2,8 @@
 // walks every node, collects all scalar inputs (string / number / boolean),
 // and lets you edit them inline. skips array values (those are node link
 // references like ["118", 1]). also flags which field contains <PROMPT> (the
-// injection point) and lets you mark any string field as the prompt node.
+// injection point) and optionally <PROMPT2> (a second, optional prompt slot),
+// and lets you mark any string field as either prompt node.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useRoute, Link } from "wouter";
@@ -25,6 +26,7 @@ interface ScalarInput {
   type: "string" | "int" | "float" | "boolean";
   value: string | number | boolean;
   isPrompt: boolean;
+  isPrompt2: boolean;
 }
 
 interface ScalarNodeRow {
@@ -33,12 +35,14 @@ interface ScalarNodeRow {
   classType: string;
   inputs: ScalarInput[];
   hasPrompt: boolean;
+  hasPrompt2: boolean;
 }
 
 interface ScalarClassGroup {
   classType: string;
   nodes: ScalarNodeRow[];
   hasPrompt: boolean;
+  hasPrompt2: boolean;
   inputCount: number;
 }
 
@@ -87,6 +91,7 @@ function extractScalarInputs(content: Record<string, ComfyWorkflowNode>): Scalar
         type,
         value,
         isPrompt: type === "string" && val === "<PROMPT>",
+        isPrompt2: type === "string" && val === "<PROMPT2>",
       });
     }
   }
@@ -100,11 +105,13 @@ function extractScalarInputs(content: Record<string, ComfyWorkflowNode>): Scalar
       classType: m.classType,
       inputs,
       hasPrompt: inputs.some((i) => i.isPrompt),
+      hasPrompt2: inputs.some((i) => i.isPrompt2),
     });
   }
-  // prompt node first, then by title
+  // prompt node first, then prompt2, then by title
   rows.sort((a, b) => {
     if (a.hasPrompt !== b.hasPrompt) return a.hasPrompt ? -1 : 1;
+    if (a.hasPrompt2 !== b.hasPrompt2) return a.hasPrompt2 ? -1 : 1;
     return a.nodeTitle.localeCompare(b.nodeTitle);
   });
   return rows;
@@ -122,6 +129,7 @@ function groupScalarByClass(rows: ScalarNodeRow[]): ScalarClassGroup[] {
       classType,
       nodes,
       hasPrompt: nodes.some((n) => n.hasPrompt),
+      hasPrompt2: nodes.some((n) => n.hasPrompt2),
       inputCount: nodes.reduce((acc, n) => acc + n.inputs.length, 0),
     });
   }
@@ -239,6 +247,7 @@ export function WorkflowDetailRoute() {
   const loraRows = extractLoraLoaders(content);
   const totalEdits = scalarRows.length + loraRows.length;
   const promptCount = scalarRows.flatMap((r) => r.inputs).filter((r) => r.isPrompt).length;
+  const prompt2Count = scalarRows.flatMap((r) => r.inputs).filter((r) => r.isPrompt2).length;
 
   function setInputValue(nodeId: string, key: string, value: string | number | boolean) {
     setContent((c) => {
@@ -261,6 +270,22 @@ export function WorkflowDetailRoute() {
       }
       const node = next[nodeId];
       if (node?.inputs) (node.inputs as Record<string, unknown>)[key] = "<PROMPT>";
+      return next;
+    });
+  }
+
+  function setAsPrompt2(nodeId: string, key: string) {
+    setContent((c) => {
+      const next = structuredClone(c);
+      // same as setAsPrompt but for the optional second slot
+      for (const n of Object.values(next)) {
+        if (!n?.inputs || typeof n.inputs !== "object") continue;
+        for (const [k, v] of Object.entries(n.inputs)) {
+          if (v === "<PROMPT2>") (n.inputs as Record<string, unknown>)[k] = "";
+        }
+      }
+      const node = next[nodeId];
+      if (node?.inputs) (node.inputs as Record<string, unknown>)[key] = "<PROMPT2>";
       return next;
     });
   }
@@ -298,8 +323,16 @@ export function WorkflowDetailRoute() {
         const node = n as { inputs?: Record<string, unknown> };
         return node?.inputs && Object.values(node.inputs).some((v) => v === "<PROMPT>");
       });
-      if (hasPrompt) toast.show("Workflow JSON loaded. Click Save nodes to apply.", "success");
-      else toast.warn("Loaded. No <PROMPT> placeholder found — set one before saving.");
+      const hasPrompt2 = Object.values(parsed as Record<string, unknown>).some((n) => {
+        const node = n as { inputs?: Record<string, unknown> };
+        return node?.inputs && Object.values(node.inputs).some((v) => v === "<PROMPT2>");
+      });
+      if (hasPrompt)
+        toast.show(
+          `Workflow JSON loaded${hasPrompt2 ? " (found <PROMPT> + <PROMPT2>)" : ""}. Click Save nodes to apply.`,
+          "success",
+        );
+      else toast.warn("Loaded. No <PROMPT> placeholder found, set one before saving.");
     } catch (err) {
       toast.show(`Upload failed: ${err instanceof Error ? err.message : String(err)}`, "error");
     } finally {
@@ -394,6 +427,15 @@ export function WorkflowDetailRoute() {
                   ) : (
                     <span class="section-warn">{promptCount} prompt nodes (only the first is used).</span>
                   )}
+                  {prompt2Count > 1 ? (
+                    <span class="section-warn">{prompt2Count} prompt 2 nodes (only the first is used).</span>
+                  ) : prompt2Count === 1 ? (
+                    <span class="section-ok">
+                      <CheckCircle2 size={12} /> {"Second prompt (<PROMPT2>) set."}
+                    </span>
+                  ) : (
+                    <span class="field-hint">Optional: "Use as prompt 2" marks a second LLM input slot.</span>
+                  )}
                 </div>
                 {scalarGroups.map((group) => {
                   const secKey = `s:${group.classType}`;
@@ -413,15 +455,19 @@ export function WorkflowDetailRoute() {
                         {group.hasPrompt && (
                           <span class="text-node-badge">PROMPT</span>
                         )}
+                        {group.hasPrompt2 && (
+                          <span class="text-node-badge">PROMPT2</span>
+                        )}
                       </button>
                       {open && (
                         <div class="text-node-list">
                       {group.nodes.map((row) => (
-                        <div key={row.nodeId} class={`text-node-row ${row.hasPrompt ? "is-prompt" : ""}`}>
+                        <div key={row.nodeId} class={`text-node-row ${row.hasPrompt || row.hasPrompt2 ? "is-prompt" : ""}`}>
                           <div class="text-node-meta">
                             <span class="text-node-id">#{row.nodeId}</span>
                             <span class="text-node-title">{row.nodeTitle}</span>
                             {row.hasPrompt && <span class="text-node-badge-muted">prompt</span>}
+                            {row.hasPrompt2 && <span class="text-node-badge-muted">prompt 2</span>}
                           </div>
                           <div class="scalar-input-list">
                             {row.inputs.map((inp) => {
@@ -430,10 +476,15 @@ export function WorkflowDetailRoute() {
                                   <div key={inp.key} class="scalar-input-row">
                                     <div class="scalar-input-head">
                                     <span class="scalar-input-key">{inp.key}</span>
-                                      {!inp.isPrompt && (
-                                        <Button variant="ghost" size="sm" onClick={() => setAsPrompt(row.nodeId, inp.key)}>
-                                          Use as prompt
-                                        </Button>
+                                      {!inp.isPrompt && !inp.isPrompt2 && (
+                                        <>
+                                          <Button variant="ghost" size="sm" onClick={() => setAsPrompt(row.nodeId, inp.key)}>
+                                            Use as prompt
+                                          </Button>
+                                          <Button variant="ghost" size="sm" onClick={() => setAsPrompt2(row.nodeId, inp.key)}>
+                                            Use as prompt 2
+                                          </Button>
+                                        </>
                                       )}
                                     </div>
                                     <TextArea

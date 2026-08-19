@@ -193,7 +193,13 @@ export async function fetchReferencedMessage(
       referenced.member?.displayName ||
       referenced.author.displayName ||
       referenced.author.username;
-    const text = `{{user}} is replying to ${referenced.content} (by @${displayName})`;
+    const text = `[{{user}} is replying to]
+    ---------------------
+    ${referenced.content}
+     (by @${displayName})
+    --------------------- 
+    `;
+    
 
     const images = await extractImagesFromMessage(log, referenced);
     const stickerImages = await extractStickerImagesFromMessage(log, referenced);

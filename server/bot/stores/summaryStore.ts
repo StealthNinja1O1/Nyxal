@@ -43,6 +43,7 @@ function rowToSummary(row: typeof chatSummaries.$inferSelect): SummaryRow {
     id: row.id,
     botId: row.botId,
     channelId: row.channelId,
+    seq: row.seq,
     content: row.content,
     startMessageId: row.startMessageId,
     endMessageId: row.endMessageId,

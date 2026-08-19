@@ -32,7 +32,7 @@ export type BotCommand =
   | { name: "renameUser"; args: { userId: string; newName: string } }
   | { name: "editOrAddToLorebook"; args: { entryName: string; keywords: string[]; content: string } }
   | { name: "postSticker"; args: { stickerName: string } }
-  | { name: "generateImage"; args: { prompt: string; orientation?: "portrait" | "square" | "landscape" } }
+  | { name: "generateImage"; args: { prompt: string; prompt2?: string; orientation?: "portrait" | "square" | "landscape" } }
   | { name: "setBio"; args: { bio: string } }
   | { name: "webSearch"; args: { query: string } }
   | { name: "fetchWebpage"; args: { url: string } }

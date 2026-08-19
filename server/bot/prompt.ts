@@ -109,8 +109,6 @@ Follow these content guidelines:
 - Use character repetition, uppercase, symbols like "~", "\u2661" etc. Emojis are allowed within dialogue.
 - Have fun! Be creative! Amusing writing and colorful metaphors are welcome.
 
-{{lorebookEntries}}
-
 [Reply only in the following json format:
 \`\`\`json
 {
@@ -133,6 +131,8 @@ Image attachments like [Attached image: ...] are images sent by either yourself 
 Your Discord ID is {{discordId}}.
 {Human's avatar}
 A member of the discord server {{serverName}} in channel {{channelName}} named {{user}}, who is interacting with {{char}} in this simulation.
+
+{{lorebookEntries}}
 </lore>
 <examples>
 
@@ -267,7 +267,7 @@ export async function buildAIRequest(
   const temperature = config.temperature > 1 ? config.temperature / 100 : config.temperature;
 
   // lorebook processing: merge static + dynamic
-  let lorebookEntries = "Lorebook entries:\n";
+  let lorebookEntries = "All existing Lorebook entries:\n";
   const staticBook = character.character_book ? await parseLorebook(character.character_book as any) : null;
 
   // memory entries are always editable (the editOrAddToLorebook command is
@@ -276,14 +276,14 @@ export async function buildAIRequest(
   if (chatMemoryBook && chatMemoryBook.entries.length > 0) {
     lorebookEntries += "Editable memory entries (you can modify these with editOrAddToLorebook):\n";
     for (const entry of chatMemoryBook.entries)
-      lorebookEntries += `Entry name: ${entry.name || "Unnamed entry"}; Keywords: ${entry.keys?.join(", ") || "No keywords"};\n`;
+      lorebookEntries += `Entry name: ${entry.name || "Unnamed entry"};\n`;
   } else {
     lorebookEntries += "No editable memory entries yet. You can create them with editOrAddToLorebook.\n";
   }
   if (staticBook?.entries && staticBook.entries.length > 0) {
     lorebookEntries += "\nStatic lore entries (read-only, do NOT try to edit these):\n";
     for (const entry of staticBook.entries)
-      lorebookEntries += `Entry name: ${entry.name || "Unnamed entry"}; Keywords: ${entry.keys?.join(", ") || "No keywords"};\n`;
+      lorebookEntries += `Entry name: ${entry.name || "Unnamed entry"};\n`;
   }
 
   const mergedEntries: CharacterBookEntry[] = [

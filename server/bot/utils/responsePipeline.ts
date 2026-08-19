@@ -105,18 +105,23 @@ export async function runResponsePipeline(opts: ResponsePipelineOptions): Promis
     try {
       const asyncResults = await executeAsyncCommands(registry, log, asyncCommands, commandCtx);
       for (const result of asyncResults) {
-        if (result.success && result.attachment) {
-          const file = new AttachmentBuilder(result.attachment.buffer, { name: result.attachment.name });
+        if (result.success && result.attachments && result.attachments.length > 0) {
+          const files = result.attachments.map((a) => new AttachmentBuilder(a.buffer, { name: a.name }));
+          const label = result.mediaType ?? "image";
+          const orient =
+            label === "image" && result.orientation && result.orientation !== "(default)"
+              ? `, ${result.orientation}`
+              : "";
           const followUpText =
             deps.config.comfyui.includePromptInMessage && result.prompt
-              ? `image: ${result.prompt}, ${result.orientation ?? "square"}`
+              ? `${label}: ${result.prompt}${orient}`
               : "";
-          await ctx.sendFollowUp(followUpText, [file]);
+          await ctx.sendFollowUp(followUpText, files);
           log.info(`Async command: ${result.message}`);
         } else if (result.success) {
           log.info(`Async command: ${result.message}`);
         } else {
-          await ctx.sendFollowUp("*[The static interfered with the image generation...]*");
+          await ctx.sendFollowUp("*[The static interfered with the generation...]*");
           log.warn(`Async command failed: ${result.message}`);
         }
       }

@@ -122,7 +122,9 @@ export function ExtensionsTab({ bot }: { bot: Bot }) {
         <div class="setting-group-title">Workflows</div>
         <p class="field-hint" style={{ marginTop: 0, marginBottom: 10 }}>
           Assign one or more workflows. The default (starred) is used unless the LLM overrides it. The bot's
-          context lists all assigned workflows by name so the LLM can pick one.
+          context lists all assigned workflows by name so the LLM can pick one. Workflows can also contain a
+          &lt;PROMPT2&gt; placeholder for an optional second prompt (negative prompt, lyrics, etc), and anything
+          the workflow saves (images, audio, video) is sent back, so music workflows work too.
         </p>
 
         {assignedWorkflows.length === 0 && workflows.value.length === 0 ? (

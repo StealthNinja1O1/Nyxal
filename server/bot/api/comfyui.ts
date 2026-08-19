@@ -8,9 +8,25 @@ interface WorkflowNode {
   [key: string]: any;
 }
 
-export interface GenerateImageResult {
+export interface GeneratedFile {
   buffer: Buffer;
   filename: string;
+}
+
+export interface GenerateImageResult {
+  files: GeneratedFile[];
+}
+
+/** output categories comfyui nodes can emit into history. "gifs" is the
+ *  legacy video bucket (VHS VideoCombine reports mp4/webm there too). */
+const OUTPUT_CATEGORIES = ["images", "gifs", "audio", "video"] as const;
+
+/** coarse media label for a filename, used for the discord follow-up caption. */
+export function mediaLabelFor(filename: string): string {
+  const ext = filename.toLowerCase().split(".").pop() ?? "";
+  if (["mp3", "flac", "wav", "ogg", "m4a", "aac"].includes(ext)) return "audio";
+  if (["mp4", "webm", "mkv", "mov"].includes(ext)) return "video";
+  return "image";
 }
 
 /** Resolve a resolution by name. Falls back to the first configured one. */
@@ -29,17 +45,27 @@ export async function generateImage(
   prompt: string,
   orientation: string | undefined,
   workflowTemplate: Record<string, unknown> | null = null,
+  prompt2: string | undefined = undefined,
 ): Promise<GenerateImageResult> {
   const baseUrl = config.baseUrl.replace(/\/+$/, "");
-  const { workflow, seed } = loadAndPrepareWorkflow(config, log, prompt, orientation, workflowTemplate);
+  const { workflow, seed } = loadAndPrepareWorkflow(config, log, prompt, orientation, workflowTemplate, prompt2);
   const promptId = await submitPrompt(baseUrl, workflow);
   log.info(`ComfyUI: Job ${promptId} submitted, waiting for completion...`);
-  const output = await pollForCompletion(config, log, baseUrl, promptId);
-  let buffer = await downloadImage(baseUrl, output);
-  if (config.stripMetadata) buffer = stripPngTextChunks(buffer);
-  if (seed != null) buffer = embedPngTextChunk(buffer, "seed", String(seed));
-  log.info(`ComfyUI: Image ready (${(buffer.length / 1024).toFixed(0)}KB)`);
-  return { buffer, filename: output.filename };
+  const outputs = await pollForCompletion(config, log, baseUrl, promptId);
+  const files: GeneratedFile[] = [];
+  for (const output of outputs) {
+    let buffer = await downloadFile(baseUrl, output);
+    // both helpers no-op on non-png buffers, so audio/video passes through
+    if (config.stripMetadata) buffer = stripPngTextChunks(buffer);
+    if (seed != null) buffer = embedPngTextChunk(buffer, "seed", String(seed));
+    files.push({ buffer, filename: output.filename });
+  }
+  log.info(
+    `ComfyUI: ${files.length} output file(s) ready (${files
+      .map((f) => `${f.filename} ${(f.buffer.length / 1024).toFixed(0)}KB`)
+      .join(", ")})`,
+  );
+  return { files };
 }
 
 /** append a tEXt chunk (keyword + null + text, latin-1) right before IEND. used
@@ -103,6 +129,7 @@ function loadAndPrepareWorkflow(
   prompt: string,
   orientation: string | undefined,
   workflowTemplate: Record<string, unknown> | null,
+  prompt2: string | undefined,
 ): { workflow: Record<string, WorkflowNode>; seed: number | null } {
   if (!workflowTemplate || typeof workflowTemplate !== "object") {
     throw new Error("No comfyui workflow assigned to this bot. Assign one in the ComfyUI tab.");
@@ -111,6 +138,7 @@ function loadAndPrepareWorkflow(
 
   const resolution = resolveResolution(config, orientation);
   let promptReplaced = false;
+  let prompt2Replaced = false;
   let resolutionReplaced = false;
   const randomSeed = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
   let seedsReplaced = 0;
@@ -123,9 +151,15 @@ function loadAndPrepareWorkflow(
       seedsReplaced++;
     }
     for (const [key, value] of Object.entries(node.inputs)) {
-      if (typeof value === "string" && value === "<PROMPT>") {
+      if (typeof value !== "string") continue;
+      if (value === "<PROMPT>") {
         node.inputs[key] = prompt;
         promptReplaced = true;
+      } else if (value === "<PROMPT2>") {
+        // always swap the placeholder out so it never leaks into the gen;
+        // an unset prompt2 becomes an empty second input.
+        node.inputs[key] = prompt2 ?? "";
+        prompt2Replaced = true;
       }
     }
     if ("width" in node.inputs && "height" in node.inputs) {
@@ -137,8 +171,11 @@ function loadAndPrepareWorkflow(
 
   if (!promptReplaced)
     throw new Error('No <PROMPT> placeholder found in workflow. Add a node with an input value of exactly "<PROMPT>".');
+  if (prompt2 && !prompt2Replaced)
+    log.warn('ComfyUI: prompt2 provided but no <PROMPT2> placeholder found in workflow, ignoring it');
   if (seedsReplaced > 0) log.debug(`ComfyUI: Randomized ${seedsReplaced} seed(s) to ${randomSeed}`);
-  if (!resolutionReplaced) log.warn("ComfyUI: No node with width/height inputs found, resolution not overridden");
+  if (!resolutionReplaced)
+    log.debug("ComfyUI: No node with width/height inputs found, resolution not overridden");
   // only return the seed when we actually randomized or null so the caller knows there's nothing to embed.
   return { workflow: cloned, seed: seedsReplaced > 0 ? randomSeed : null };
 }
@@ -153,14 +190,21 @@ async function submitPrompt(baseUrl: string, workflow: Record<string, WorkflowNo
     const errText = await res.text();
     throw new Error(`ComfyUI submit failed: ${res.status} ${res.statusText}\n${errText}`);
   }
-  const data = (await res.json()) as { prompt_id?: string; node_errors?: Record<string, any> };
+  const text = await res.text();
+  let data: { prompt_id?: string; node_errors?: Record<string, any> };
+  try {
+    data = JSON.parse(text) as { prompt_id?: string; node_errors?: Record<string, any> };
+  } catch (error) {
+    throw new Error(`ComfyUI submit failed: ${res.status} ${res.statusText}\n${text}`);
+  }
   if (data.node_errors && Object.keys(data.node_errors).length > 0)
     throw new Error(`ComfyUI node errors: ${JSON.stringify(data.node_errors)}`);
   if (!data.prompt_id) throw new Error("ComfyUI did not return a prompt_id");
   return data.prompt_id;
 }
 
-interface ImageOutput {
+interface OutputFile {
+  nodeId: string;
   filename: string;
   subfolder: string;
   type: string;
@@ -171,7 +215,7 @@ async function pollForCompletion(
   log: Logger,
   baseUrl: string,
   promptId: string,
-): Promise<ImageOutput> {
+): Promise<OutputFile[]> {
   const timeoutMs = config.timeoutSeconds * 1000;
   const intervalMs = config.pollIntervalMs;
   const start = Date.now();
@@ -188,12 +232,31 @@ async function pollForCompletion(
     if (entry) {
       const status = entry.status;
       if (status?.status_str === "success" && status.completed) {
+        // collect every saved file across all output nodes + categories
+        // (images, gifs, audio, video) so non-image workflows work too.
         const outputs: Record<string, any> = entry.outputs ?? {};
-        for (const nodeOutput of Object.values(outputs)) {
-          if (nodeOutput.images && Array.isArray(nodeOutput.images) && nodeOutput.images.length > 0)
-            return nodeOutput.images[0] as ImageOutput;
+        const files: OutputFile[] = [];
+        const nodeIds = Object.keys(outputs).sort(
+          (a, b) => Number(a) - Number(b) || a.localeCompare(b),
+        );
+        for (const nodeId of nodeIds) {
+          const nodeOutput = outputs[nodeId] ?? {};
+          for (const category of OUTPUT_CATEGORIES) {
+            const arr = nodeOutput[category];
+            if (!Array.isArray(arr)) continue;
+            for (const f of arr) {
+              if (f && typeof f.filename === "string")
+                files.push({
+                  nodeId,
+                  filename: f.filename,
+                  subfolder: typeof f.subfolder === "string" ? f.subfolder : "",
+                  type: typeof f.type === "string" ? f.type : "output",
+                });
+            }
+          }
         }
-        throw new Error("ComfyUI job completed but no images found in output");
+        if (files.length === 0) throw new Error("ComfyUI job completed but no output files found");
+        return files;
       }
     }
     await Bun.sleep(intervalMs);
@@ -201,7 +264,7 @@ async function pollForCompletion(
   throw new Error(`ComfyUI timed out after ${config.timeoutSeconds}s waiting for job ${promptId}`);
 }
 
-async function downloadImage(baseUrl: string, output: ImageOutput): Promise<Buffer> {
+async function downloadFile(baseUrl: string, output: OutputFile): Promise<Buffer> {
   const params = new URLSearchParams({
     filename: output.filename,
     type: output.type,
@@ -209,6 +272,6 @@ async function downloadImage(baseUrl: string, output: ImageOutput): Promise<Buff
     t: String(Date.now()),
   });
   const res = await fetch(`${baseUrl}/view?${params}`);
-  if (!res.ok) throw new Error(`ComfyUI image download failed: ${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error(`ComfyUI file download failed: ${res.status} ${res.statusText}`);
   return Buffer.from(await res.arrayBuffer());
 }

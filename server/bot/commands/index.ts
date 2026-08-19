@@ -62,10 +62,21 @@ export function buildRegistry(extraDefs: CommandDef<any>[] = []): CommandRegistr
   return registry;
 }
 
+/** does this workflow contain a <PROMPT2> placeholder anywhere? */
+function workflowHasPrompt2(content: Record<string, unknown> | null): boolean {
+  if (!content) return false;
+  for (const node of Object.values(content)) {
+    const inputs = (node as { inputs?: Record<string, unknown> } | null)?.inputs;
+    if (!inputs || typeof inputs !== "object") continue;
+    for (const v of Object.values(inputs)) if (v === "<PROMPT2>") return true;
+  }
+  return false;
+}
+
 /**
  * Build a per-config description for generateImage that lists the actual
  * resolutions + workflows the bot has. Appended to the base description so
- * the LLM knows what to pass for orientation + workflow.
+ * the LLM knows what to pass for orientation + workflow (+ prompt2).
  */
 function describeGenerateImage(config: BotRuntimeConfig, base: string): string {
   const resList = config.comfyui.resolutions.map((r) => `${r.name} (${r.width}x${r.height})`).join(", ");
@@ -75,10 +86,20 @@ function describeGenerateImage(config: BotRuntimeConfig, base: string): string {
     lines.push(`Available orientations: ${resList}. Default: ${defaultRes}.`);
   }
   if (config.comfyuiWorkflows.length > 0) {
+    const anyPrompt2 = config.comfyuiWorkflows.some((w) => workflowHasPrompt2(w.content));
     const wfList = config.comfyuiWorkflows
-      .map((w) => (w.id === config.comfyuiDefaultWorkflowId ? `"${w.name}" (default)` : `"${w.name}"`))
+      .map((w) => {
+        const tags: string[] = [];
+        if (w.id === config.comfyuiDefaultWorkflowId) tags.push("default");
+        if (workflowHasPrompt2(w.content)) tags.push("takes prompt2");
+        return `"${w.name}"${tags.length ? ` (${tags.join(", ")})` : ""}`;
+      })
       .join(", ");
     lines.push(`Available workflows: ${wfList}. Pass workflow="<name>" to use a non-default one.`);
+    if (anyPrompt2)
+      lines.push(
+        `Workflows marked "takes prompt2" replace their <PROMPT2> placeholder with the prompt2 argument. What it controls (negative prompt, lyrics, second caption, ...) depends on the workflow.`,
+      );
   }
   return lines.join("\n");
 }

@@ -27,7 +27,9 @@ export interface CommandResult {
   message: string;
 }
 export interface AsyncCommandResult extends CommandResult {
-  attachment?: { buffer: Buffer; name: string };
+  attachments?: Array<{ buffer: Buffer; name: string }>;
+  /** caption label for the follow-up ("image", "audio", "video"); default "image" */
+  mediaType?: string;
   prompt?: string;
   orientation?: string;
 }

@@ -12,7 +12,7 @@ import {
   formatDeepResearchResult,
   formatCrawlResult,
 } from "../api/websearch";
-import { generateImage } from "../api/comfyui";
+import { generateImage, mediaLabelFor } from "../api/comfyui";
 import type { CommandDef, AsyncCommandResult } from "./registry";
 
 type RecursiveResult = string;
@@ -99,26 +99,31 @@ export const crawlSiteCommand: CommandDef<
 };
 
 export const generateImageCommand: CommandDef<
-  { prompt: string; orientation?: string; workflow?: string },
+  { prompt: string; prompt2?: string; orientation?: string; workflow?: string },
   AsyncCommandResult
 > = {
   name: "generateImage",
   args: {
     prompt: "string",
+    prompt2:
+      "string (optional, replaces the <PROMPT2> placeholder in workflows that have one, e.g. a negative prompt, lyrics, or a second caption)",
     orientation: "string (one of the available orientations, default: the first)",
     workflow: "string (optional, one of the available workflow names, default: the default workflow)",
   },
-  description: `Generate an image using the image generator. Provide a descriptive prompt and choose orientation. The image will be sent as a follow-up message. Use Booru style tags like "1girl, smile, blue hair, medium breasts, cowboy shot, dark, simple background" etc. natural language does not work as well.`,
+  description: `Generate media with the generator. What it produces depends on the workflow: images, audio (music), video, etc. The output file(s) will be sent as a follow-up message. For image workflows use Booru style tags like "1girl, smile, blue hair, medium breasts, cowboy shot, dark, simple background", natural language does not work as well. If a workflow is listed as "takes prompt2", fill its second input (e.g. negative prompt, or a music caption + lyrics) via prompt2.`,
   kind: "async",
   defaultEnabled: (config) => !!config.comfyui.baseUrl && config.comfyuiWorkflowIds.length > 0,
   execute: async (args, ctx) => {
-    const { prompt, orientation, workflow } = args as {
+    const { prompt, prompt2, orientation, workflow } = args as {
       prompt: string;
+      prompt2?: string;
       orientation?: string;
       workflow?: string;
     };
     if (!prompt || typeof prompt !== "string")
       return { success: false, message: "Invalid prompt argument for generateImage" };
+    if (prompt2 !== undefined && typeof prompt2 !== "string")
+      return { success: false, message: "Invalid prompt2 argument for generateImage" };
 
     // pick workflow by name (case-insensitive); fall back to default + warn.
     let template = ctx.config.comfyuiDefaultWorkflow;
@@ -138,15 +143,21 @@ export const generateImageCommand: CommandDef<
     }
 
     try {
-      const result = await generateImage(ctx.config.comfyui, ctx.log, prompt, orientation, template);
+      const result = await generateImage(ctx.config.comfyui, ctx.log, prompt, orientation, template, prompt2);
+      const mediaType = mediaLabelFor(result.files[0]?.filename ?? "");
       return {
         success: true,
-        message: `Image generated (orientation: ${orientation ?? "(default)"}, workflow: ${workflowLabel}): "${prompt}"`,
-        attachment: { buffer: result.buffer, name: result.filename },
+        message: `Generated ${result.files.length} ${mediaType} file(s) (orientation: ${orientation ?? "(default)"}, workflow: ${workflowLabel}${prompt2 ? `, prompt2: "${prompt2}"` : ""}): "${prompt}"`,
+        attachments: result.files.map((f) => ({ buffer: f.buffer, name: f.filename })),
+        mediaType,
         prompt,
         orientation: orientation ?? "(default)",
       };
     } catch (error) {
+      // if its failed to parse json, log the raw response for debugging
+      if (error instanceof Error && error.message.includes("Failed to parse JSON")) {
+        ctx.log.error("generateImage: failed to parse JSON response from ComfyUI. Raw response:", error);
+      }
       return {
         success: false,
         message: `Failed to generate image: ${error instanceof Error ? error.message : String(error)}`,
