@@ -22,6 +22,7 @@ export const requestsRoutes = new Elysia({ prefix: "/api/bots" }).get("/:id/requ
     model: r.model,
     temperature: r.temperature,
     messages: r.messages,
+    tools: r.tools ?? null,
     promptTokens: r.promptTokens,
     success: r.success,
     createdAt: r.createdAt.getTime(),

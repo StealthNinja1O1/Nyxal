@@ -133,12 +133,22 @@ export interface CapturedLlmMessage {
   tool_calls?: CapturedToolCall[];
   tool_call_id?: string;
 }
+/** native tool definition as submitted on a request (tools field) */
+export interface CapturedNativeTool {
+  type: string;
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+  };
+}
 export interface LlmRequestCapture {
   id: number;
   source: string; // chat | followup | summary
   model: string;
   temperature: number;
   messages: CapturedLlmMessage[];
+  tools?: CapturedNativeTool[] | null;
   promptTokens: number;
   success: boolean;
   createdAt: number;

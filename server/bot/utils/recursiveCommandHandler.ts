@@ -75,10 +75,12 @@ async function executeRecursiveCommand(
 }
 
 /** execute one native tool call + return its tool-result content. recursive
- *  tools run for real; instant/async tools are bubbled up (they execute after
- *  the final reply, same cost shape as json mode) and acknowledged with a
- *  synthetic result so every tool_call on the turn has an answer, which
- *  strict providers (anthropic-style validation) require. */
+ *  tools run for real; instant/async tools only get an acknowledgment
+ *  ("[accepted: ...]") so every tool_call on the turn has an answer, which
+ *  strict providers (anthropic-style validation) require. they are NEVER
+ *  scheduled here: the caller already split the same command list (upfront
+ *  for the initial turn, per-turn newSplit for follow-ups), so pushing them
+ *  here too would execute them twice. */
 async function executeNativeToolCall(
   call: ToolCallWire,
   opts: {
@@ -91,7 +93,6 @@ async function executeNativeToolCall(
     guildId: string | null;
     messageId: string | null;
     depth: number;
-    onBubble: (cmd: BotCommand) => void;
   },
 ): Promise<string> {
   const args = parseToolArguments(call.function.arguments);
@@ -105,7 +106,7 @@ async function executeNativeToolCall(
   const def = opts.registry.get(cmd.name);
   if (!def) return `[tool call failed: unknown tool "${cmd.name}"]`;
   if (!opts.recursiveNames.includes(cmd.name)) {
-    opts.onBubble(cmd);
+    // scheduled by the caller's split already; do NOT execute or re-queue here
     return `[accepted: ${cmd.name} is scheduled to run when this turn completes]`;
   }
   try {
@@ -191,10 +192,6 @@ export async function processRecursiveCommands(options: ProcessRecursiveOptions)
           guildId: commandCtx.message?.guild?.id ?? null,
           messageId: commandCtx.message?.id ?? null,
           depth,
-          onBubble: (cmd) => {
-            if (registry.get(cmd.name)?.kind === "async") asyncCommands.push(cmd);
-            else remainingInstant.push(cmd);
-          },
         });
         chain.push({ role: "tool", tool_call_id: call.id, content: result });
         resultIdxs.push(chain.length - 1);

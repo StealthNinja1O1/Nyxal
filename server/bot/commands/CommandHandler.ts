@@ -12,7 +12,7 @@ import {
 } from "discord.js";
 import type { Interaction } from "discord.js";
 import type { BotRuntimeConfig } from "../../config/botConfig";
-import type { RuntimeCharacter, ChatMemoryBook } from "../types";
+import type { RuntimeCharacter, ChatMemoryBook, BotCommand } from "../types";
 import type { PromptDeps } from "../prompt";
 import { buildAIRequest, trimMessagesToTokenBudget } from "../prompt";
 import type { CommandRegistry, CommandExecutionContext } from "./registry";
@@ -25,7 +25,7 @@ import {
   extractImagesFromMessage,
   extractStickerImagesFromMessage,
 } from "../history";
-import { generateResponse } from "../api/llm";
+import { generateResponse, generateToolResponse, type WireMessage } from "../api/llm";
 import { describeImages, formatImageDescriptions } from "../api/vision";
 import { CommandManager } from "./CommandManager";
 import type { Logger } from "../utils/logger";
@@ -60,6 +60,54 @@ export class CommandHandler {
 
   async registerCommands(applicationId: string): Promise<void> {
     await this.commandManager.registerCommands(applicationId, this.bot.getCharacter().name);
+  }
+
+  /**
+   * Shared generate step for the interaction paths (/ask + ask context menu).
+   * Mirrors the native branch of generateAIResponse: in native toolcall mode
+   * the tools field goes on the wire and tool_calls come back parsed; the
+   * legacy json path is a plain generateResponse. Without this, native mode
+   * sends a system prompt with no json format instructions and no tools array,
+   * so the model improvises tool calls as text.
+   */
+  private async generateForInteraction(
+    deps: PromptDeps,
+    model: string,
+    messages: WireMessage[],
+    temperature: number,
+  ): Promise<{ raw: string; nativeCommands: BotCommand[] | null; initialToolTurn: WireMessage | null }> {
+    const config = deps.config;
+    if (config.toolcallMode === "native" && deps.tools && deps.tools.length > 0) {
+      const res = await generateToolResponse(
+        deps.creds,
+        deps.log,
+        model,
+        messages,
+        temperature,
+        config.addNothink,
+        deps.tools,
+        "chat",
+        [],
+      );
+      return {
+        raw: res.content,
+        nativeCommands: res.toolCalls.map((tc) => ({ name: tc.name, args: tc.args })),
+        initialToolTurn:
+          res.toolCalls.length > 0
+            ? {
+                role: "assistant",
+                content: res.content,
+                tool_calls: res.toolCalls.map((tc) => ({
+                  id: tc.id,
+                  type: "function" as const,
+                  function: { name: tc.name, arguments: tc.arguments },
+                })),
+              }
+            : null,
+      };
+    }
+    const raw = await generateResponse(deps.creds, deps.log, model, messages, temperature, config.addNothink);
+    return { raw, nativeCommands: null, initialToolTurn: null };
   }
 
   async handleInteraction(interaction: Interaction): Promise<void> {
@@ -146,7 +194,7 @@ export class CommandHandler {
         chatMemoryBook: this.bot.getChatMemoryBook(),
       });
 
-      const raw = await generateResponse(deps.creds, deps.log, model, messages, temperature, config.addNothink);
+      const { raw, nativeCommands, initialToolTurn } = await this.generateForInteraction(deps, model, messages, temperature);
       const ctx = new InteractionResponseContext(cmd);
 
       await runResponsePipeline({
@@ -165,6 +213,8 @@ export class CommandHandler {
         message: null,
         character: this.bot.getCharacter(),
         execCtx: this.bot.buildExecCtx(null),
+        nativeCommands,
+        initialToolTurn,
       });
     } catch (err) {
       this.log.error("Ask command error:", err);
@@ -289,7 +339,7 @@ export class CommandHandler {
           chatMemoryBook: this.bot.getChatMemoryBook(),
         });
 
-        const raw = await generateResponse(deps.creds, deps.log, model, messages, temperature, config.addNothink);
+        const { raw, nativeCommands, initialToolTurn } = await this.generateForInteraction(deps, model, messages, temperature);
         const ctx = new InteractionResponseContext(modalInt);
 
         await runResponsePipeline({
@@ -308,6 +358,8 @@ export class CommandHandler {
           message: targetMessage as Message,
           character: this.bot.getCharacter(),
           execCtx: this.bot.buildExecCtx(targetMessage as Message),
+          nativeCommands,
+          initialToolTurn,
         });
       } catch (err) {
         this.log.error("AskChar modal error:", err);

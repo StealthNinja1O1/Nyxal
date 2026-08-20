@@ -18,6 +18,7 @@ import type {
   SummaryConfig,
   ToolOverrides,
   CapturedLlmMessage,
+  CapturedNativeTool,
 } from "../../shared/types";
 
 export const settings = sqliteTable("settings", {
@@ -298,6 +299,8 @@ export const llmRequestCapture = sqliteTable("llm_request_capture", {
   model: text("model").notNull(),
   temperature: real("temperature").notNull(),
   messages: text("messages", { mode: "json" }).$type<CapturedLlmMessage[]>().notNull(),
+  // the native toolcalling `tools` field as submitted (null for legacy json calls)
+  tools: text("tools", { mode: "json" }).$type<CapturedNativeTool[]>(),
   promptTokens: integer("prompt_tokens").notNull().default(0),
   success: integer("success", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),

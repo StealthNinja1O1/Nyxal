@@ -132,9 +132,10 @@ async function finalizeCall(
   usage: ChatCompletionResponse["usage"],
   success: boolean,
   start: number,
+  tools?: NativeToolDef[] | null,
 ): Promise<void> {
   void recordCall(creds, model, usage, Date.now() - start, success).catch(() => {});
-  void captureRequest(creds, source, model, temperature, messages, usage?.prompt_tokens ?? 0, success).catch(
+  void captureRequest(creds, source, model, temperature, messages, usage?.prompt_tokens ?? 0, success, tools).catch(
     () => {},
   );
 }
@@ -229,7 +230,7 @@ export async function generateToolResponse(
     log.error("LLM API request failed:", err);
     throw err;
   } finally {
-    void finalizeCall(creds, source, model, temperature, finalMessages, usage, success, start);
+    void finalizeCall(creds, source, model, temperature, finalMessages, usage, success, start, tools);
   }
 }
 
@@ -298,6 +299,7 @@ async function captureRequest(
   messages: WireMessage[],
   promptTokens: number,
   success: boolean,
+  tools?: NativeToolDef[] | null,
 ): Promise<void> {
   await db.insert(llmRequestCapture).values({
     botId: creds.botId,
@@ -305,6 +307,7 @@ async function captureRequest(
     model,
     temperature,
     messages: sanitizeForCapture(messages),
+    tools: tools && tools.length > 0 ? tools : null,
     promptTokens,
     success,
     createdAt: new Date(),

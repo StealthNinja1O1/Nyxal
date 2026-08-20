@@ -7,7 +7,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { RotateCw, Send, ChevronDown, ChevronRight, Code2, MessageSquare } from "lucide-react";
 import { requestsApi } from "../../api/requests";
-import type { CapturedLlmMessage, CapturedMessagePart, LlmRequestCapture } from "@shared/types";
+import type { CapturedLlmMessage, CapturedMessagePart, CapturedNativeTool, LlmRequestCapture } from "@shared/types";
 import { Button } from "../../components/Button";
 import { Badge } from "../../components/Badge";
 import { Toggle } from "../../components/Toggle";
@@ -49,6 +49,7 @@ export function RequestsTab({ botId }: Props) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [rawMode, setRawMode] = useState(false);
   const [openSystem, setOpenSystem] = useState(false);
+  const [openTools, setOpenTools] = useState(false);
 
   useEffect(() => {
     void reload();
@@ -105,6 +106,7 @@ export function RequestsTab({ botId }: Props) {
                 onClick={() => {
                   setSelectedId(c.id);
                   setOpenSystem(false);
+                  setOpenTools(false);
                 }}
               >
                 <div class="req-item-top">
@@ -114,6 +116,7 @@ export function RequestsTab({ botId }: Props) {
                 <div class="req-item-model">{c.model || "unknown model"}</div>
                 <div class="req-item-meta">
                   {c.messages.length} msgs
+                  {c.tools && c.tools.length > 0 ? ` - ${c.tools.length} tools` : ""}
                   {c.promptTokens > 0 ? ` - ${c.promptTokens} tok` : ""}
                   {!c.success ? " - FAILED" : ""}
                 </div>
@@ -133,11 +136,47 @@ export function RequestsTab({ botId }: Props) {
                 </div>
                 <Badge tone={SOURCE_TONES[selected.source] ?? "neutral"}>{selected.source}</Badge>
               </div>
+              {selected.tools && selected.tools.length > 0 && (
+                <RequestTools tools={selected.tools} open={openTools} onToggle={() => setOpenTools((v) => !v)} />
+              )}
               {selected.messages.map((m, i) => (
                 <RequestMessage key={i} msg={m} rawMode={rawMode} systemOpen={openSystem} onToggleSystem={() => setOpenSystem((v) => !v)} />
               ))}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RequestTools({
+  tools,
+  open,
+  onToggle,
+}: {
+  tools: CapturedNativeTool[];
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div class="req-msg req-msg-system">
+      <button type="button" class="req-msg-head" onClick={onToggle}>
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span class="req-role req-role-system">tools</span>
+        <span class="field-hint">{tools.length} tool definition(s){open ? "" : ", click to expand"}</span>
+      </button>
+      {open && (
+        <div class="req-content mono">
+          {tools.map((t, i) => (
+            <div key={i} style={{ marginBottom: 10 }}>
+              <strong>{t.function.name}</strong>
+              {t.function.description ? <div class="field-hint">{t.function.description}</div> : null}
+              {t.function.parameters ? (
+                <div style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(t.function.parameters, null, 2)}</div>
+              ) : null}
+            </div>
+          ))}
         </div>
       )}
     </div>

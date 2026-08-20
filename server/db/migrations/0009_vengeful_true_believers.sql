@@ -1,0 +1,1 @@
+ALTER TABLE `llm_request_capture` ADD `tools` text;
