@@ -74,8 +74,8 @@ export type BotPatch = Partial<{
   llmProviderId: string;
   llmModel: string;
   temperature: number;
-  visionProviderId: string;
-  visionModel: string;
+  visionProviderId: string | null;
+  visionModel: string | null;
   enableVision: boolean;
   randomResponseRate: number;
   maxHistoryMessages: number;

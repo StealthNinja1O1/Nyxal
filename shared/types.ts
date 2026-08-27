@@ -149,6 +149,8 @@ export interface LlmRequestCapture {
   temperature: number;
   messages: CapturedLlmMessage[];
   tools?: CapturedNativeTool[] | null;
+  /** gpt-tokenizer estimates over the sanitized capture (server-computed) */
+  tokenStats?: { system?: number; tools?: number } | null;
   promptTokens: number;
   success: boolean;
   createdAt: number;

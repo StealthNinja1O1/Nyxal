@@ -153,6 +153,10 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
       for (const k of keys) {
         if (body[k] !== undefined) (patch as Record<string, unknown>)[k] = body[k];
       }
+      // clearable nullable fields: "" and null both mean "unset" -> real null
+      // (visionProviderId has an fk constraint, "" would violate it)
+      if (patch.visionProviderId === "") patch.visionProviderId = null;
+      if (patch.visionModel === "") patch.visionModel = null;
 
       await db.update(bots).set(patch).where(eq(bots.id, params.id));
 
@@ -193,8 +197,8 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
         llmProviderId: t.Optional(t.String()),
         llmModel: t.Optional(t.String()),
         temperature: t.Optional(t.Number()),
-        visionProviderId: t.Optional(t.String()),
-        visionModel: t.Optional(t.String()),
+        visionProviderId: t.Optional(t.Union([t.String(), t.Null()])),
+        visionModel: t.Optional(t.Union([t.String(), t.Null()])),
         enableVision: t.Optional(t.Boolean()),
         randomResponseRate: t.Optional(t.Integer()),
         maxHistoryMessages: t.Optional(t.Integer()),

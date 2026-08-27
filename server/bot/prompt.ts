@@ -466,18 +466,21 @@ export async function generateAIResponse(
     // The full allMessages is still returned for the post-turn summarizer.
     // summary rows are keyed by the nyxal bot id (config.botId, a uuid), not the discord botId
     let windowMessages = allMessages;
-    if (config.summary.enabled && config.botId) {
+    if (config.botId) {
       const [state, summaries] = await Promise.all([
         loadSummaryState(config.botId, message.channelId),
         loadSummaries(config.botId, message.channelId),
       ]);
       const watermark = state?.lastSummarizedMessageId ?? null;
+      // the watermark cuts the verbatim window regardless of summary.enabled:
+      // a manual /resetcontext must work with summarization off too
       if (watermark) {
         windowMessages = allMessages.filter(
           (m) => !m.id || !snowflakeLte(m.id, watermark),
         );
       }
-      opts_summaries = summaries.map((s) => s.content);
+      // recap injection only when summaries are enabled
+      if (config.summary.enabled) opts_summaries = summaries.map((s) => s.content);
     }
 
     const trimmedMessages = await trimMessagesToTokenBudget(

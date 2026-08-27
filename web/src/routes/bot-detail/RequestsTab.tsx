@@ -36,6 +36,10 @@ function parseAssistant(content: string): { reply: string; commands: unknown[] }
   return null;
 }
 
+function fmtTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
 function partsToText(content: string | CapturedMessagePart[]): string {
   if (typeof content === "string") return content;
   return content
@@ -137,10 +141,15 @@ export function RequestsTab({ botId }: Props) {
                 <Badge tone={SOURCE_TONES[selected.source] ?? "neutral"}>{selected.source}</Badge>
               </div>
               {selected.tools && selected.tools.length > 0 && (
-                <RequestTools tools={selected.tools} open={openTools} onToggle={() => setOpenTools((v) => !v)} />
+                <RequestTools
+                  tools={selected.tools}
+                  tokenCount={selected.tokenStats?.tools}
+                  open={openTools}
+                  onToggle={() => setOpenTools((v) => !v)}
+                />
               )}
               {selected.messages.map((m, i) => (
-                <RequestMessage key={i} msg={m} rawMode={rawMode} systemOpen={openSystem} onToggleSystem={() => setOpenSystem((v) => !v)} />
+                <RequestMessage key={i} msg={m} rawMode={rawMode} systemOpen={openSystem} systemTokens={selected.tokenStats?.system} onToggleSystem={() => setOpenSystem((v) => !v)} />
               ))}
             </div>
           )}
@@ -152,10 +161,12 @@ export function RequestsTab({ botId }: Props) {
 
 function RequestTools({
   tools,
+  tokenCount,
   open,
   onToggle,
 }: {
   tools: CapturedNativeTool[];
+  tokenCount?: number;
   open: boolean;
   onToggle: () => void;
 }) {
@@ -164,7 +175,11 @@ function RequestTools({
       <button type="button" class="req-msg-head" onClick={onToggle}>
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <span class="req-role req-role-system">tools</span>
-        <span class="field-hint">{tools.length} tool definition(s){open ? "" : ", click to expand"}</span>
+        <span class="field-hint">
+          {tools.length} tool definition(s)
+          {tokenCount != null ? ` - ~${fmtTokens(tokenCount)} tok` : ""}
+          {open ? "" : ", click to expand"}
+        </span>
       </button>
       {open && (
         <div class="req-content mono">
@@ -187,11 +202,13 @@ function RequestMessage({
   msg,
   rawMode,
   systemOpen,
+  systemTokens,
   onToggleSystem,
 }: {
   msg: CapturedLlmMessage;
   rawMode: boolean;
   systemOpen: boolean;
+  systemTokens?: number;
   onToggleSystem: () => void;
 }) {
   const isSystem = msg.role === "system";
@@ -204,7 +221,11 @@ function RequestMessage({
         <button type="button" class="req-msg-head" onClick={onToggleSystem}>
           {systemOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           <span class="req-role req-role-system">system</span>
-          <span class="field-hint">{systemOpen ? "click to collapse" : `${text.length} chars, click to expand`}</span>
+          <span class="field-hint">
+            {systemOpen
+              ? "click to collapse"
+              : `${text.length} chars${systemTokens != null ? ` - ~${fmtTokens(systemTokens)} tok` : ""}, click to expand`}
+          </span>
         </button>
         {systemOpen && <div class="req-content mono">{text}</div>}
       </div>

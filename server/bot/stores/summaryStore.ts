@@ -77,6 +77,28 @@ export async function loadSummaryState(botId: string, channelId: string): Promis
   };
 }
 
+/** Manually set the verbatim-history watermark, cuts anything before from context */
+export async function setSummaryWatermark(botId: string, channelId: string, messageId: string): Promise<void> {
+  const now = new Date();
+  const [stateRow] = await db
+    .select()
+    .from(chatSummaryState)
+    .where(and(eq(chatSummaryState.botId, botId), eq(chatSummaryState.channelId, channelId)));
+  if (stateRow) {
+    await db
+      .update(chatSummaryState)
+      .set({ lastSummarizedMessageId: messageId, updatedAt: now })
+      .where(and(eq(chatSummaryState.botId, botId), eq(chatSummaryState.channelId, channelId)));
+  } else {
+    await db.insert(chatSummaryState).values({
+      botId,
+      channelId,
+      lastSummarizedMessageId: messageId,
+      updatedAt: now,
+    });
+  }
+}
+
 /**
  * Persist a new summary segment and advance the watermark in one go.
  * Also enforces the max-summaries cap via FIFO drop when over the limit.

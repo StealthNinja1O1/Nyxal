@@ -28,6 +28,20 @@ export class CommandManager {
     (askCmd as any).integration_types = [0, 1];
     (askCmd as any).contexts = [0, 1, 2];
 
+    const resetContextCmd = new SlashCommandBuilder()
+      .setName("resetcontext")
+      .setDescription("Reset verbatim context memory for this channel (admin only)")
+      .addIntegerOption((o) =>
+        o
+          .setName("offset")
+          .setDescription("Keep the newest N messages verbatim (default 0 = full wipe)")
+          .setMinValue(0)
+          .setMaxValue(100),
+      )
+      .toJSON();
+    (resetContextCmd as any).integration_types = [0, 1];
+    (resetContextCmd as any).contexts = [0, 1, 2];
+
     const commands = [
       new SlashCommandBuilder().setName("togglerandom").setDescription("Toggle random responses"),
       new SlashCommandBuilder().setName("togglementions").setDescription("Toggle replies to mentions"),
@@ -36,7 +50,7 @@ export class CommandManager {
 
     try {
       await this.rest.put(Routes.applicationCommands(applicationId), {
-        body: [...commands, contextMenuCmd, askCmd],
+        body: [...commands, contextMenuCmd, askCmd, resetContextCmd],
       });
       this.log.info("Slash commands registered");
     } catch (err) {

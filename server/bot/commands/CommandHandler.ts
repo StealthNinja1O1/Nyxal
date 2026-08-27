@@ -17,6 +17,7 @@ import type { PromptDeps } from "../prompt";
 import { buildAIRequest, trimMessagesToTokenBudget } from "../prompt";
 import type { CommandRegistry, CommandExecutionContext } from "./registry";
 import type { CommandMetadataStore } from "../stores/commandMetadataStore";
+import { setSummaryWatermark, loadSummaries } from "../stores/summaryStore";
 import { runResponsePipeline } from "../utils/responsePipeline";
 import { InteractionResponseContext } from "../utils/ResponseContexts";
 import {
@@ -144,6 +145,10 @@ export class CommandHandler {
         await cmd.reply({ content: `Bot runtime is now ${enabled ? "enabled" : "disabled"}.`, ephemeral: true });
         return;
       }
+      if (name === "resetcontext") {
+        await this.handleResetContext(cmd);
+        return;
+      }
       if (name === "ask") {
         await this.handleAskCommand(cmd);
         return;
@@ -222,6 +227,53 @@ export class CommandHandler {
         await cmd.editReply("*Something went wrong... The static consumes my words.*");
       } catch {
         // ignore
+      }
+    }
+  }
+
+  /**
+   * /resetcontext [offset]: manually set the history watermark for
+   * the channel. Everything before the watermark is exlcuded from the prompts.
+   */
+  private async handleResetContext(cmd: ChatInputCommandInteraction): Promise<void> {
+    const config = this.bot.getConfig();
+    const offset = Math.min(99, Math.max(0, cmd.options.getInteger("offset") ?? 0));
+    const channel = cmd.channel;
+
+    if (!channel || channel.partial || !("messages" in channel)) {
+      await cmd.reply({ content: "Cannot read messages in this channel.", ephemeral: true });
+      return;
+    }
+
+    await cmd.deferReply({ ephemeral: true });
+    try {
+      const fetched = await channel.messages.fetch({ limit: offset + 1 });
+      if (fetched.size === 0) {
+        await cmd.editReply("No messages in this channel, nothing to reset.");
+        return;
+      }
+      if (offset > 0 && fetched.size <= offset) {
+        await cmd.editReply(`Only ${fetched.size} message(s) in this channel, nothing older to cut.`);
+        return;
+      }
+      const watermark = offset === 0 ? fetched.first()!.id : fetched.last()!.id;
+      await setSummaryWatermark(config.botId, cmd.channelId, watermark);
+      const summaryCount = (await loadSummaries(config.botId, cmd.channelId)).length;
+
+      await cmd.editReply(
+        (offset === 0
+          ? "Context fully wiped for this channel."
+          : `Context reset: keeping the newest ${offset} message(s), everything older is excluded.`) +
+          ` Watermark set to \`${watermark}\`.` +
+          (summaryCount > 0
+            ? ` ${summaryCount} recap(s) remain active (remove them in the dashboard if desired).`
+            : ""),
+      );
+    } catch (err) {
+      this.log.error("ResetContext command error:", err);
+      try {
+        await cmd.editReply("Failed to reset context.");
+      } catch {
       }
     }
   }
