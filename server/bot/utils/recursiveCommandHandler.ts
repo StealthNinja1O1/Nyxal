@@ -8,8 +8,13 @@ import type { PromptDeps } from "../prompt";
 import { generateFollowUpResponse } from "../prompt";
 import { generateToolResponse, parseToolArguments } from "../api/llm";
 import type { ToolCallWire, WireMessage } from "../api/llm";
+import { AttachmentBuilder } from "discord.js";
 import { parseAIResponse } from "./responseParser";
-import { splitCommands, type CommandContext } from "./botCommandHandler";
+import {
+  executeInstantCommands,
+  executeAsyncCommands,
+  type CommandContext,
+} from "./botCommandHandler";
 import type { CommandMetadataStore } from "../stores/commandMetadataStore";
 import type { ResponseContext } from "./ResponseContexts";
 import type { Logger } from "./logger";
@@ -32,11 +37,8 @@ function compressResult(text: string): string {
 }
 
 export interface RecursiveCommandResult {
-  reply: string;
-  remainingInstant: BotCommand[];
-  asyncCommands: BotCommand[];
-  finalCommands: BotCommand[];
-  replySent: boolean;
+  /** id of the last reply message sent (undefined when the model sent no text) */
+  lastMessageId: string | undefined;
 }
 
 export interface ProcessRecursiveOptions {
@@ -58,6 +60,9 @@ export interface ProcessRecursiveOptions {
   execCtx?: CommandExecutionContext;
   /** native mode: the first assistant turn as wire data (content + tool_calls) */
   initialToolTurn?: WireMessage | null;
+  /** presence hooks, wrapped around each turn's async (image gen etc) run */
+  onAsyncStart?: () => void;
+  onAsyncEnd?: () => void;
 }
 
 async function executeRecursiveCommand(
@@ -75,12 +80,11 @@ async function executeRecursiveCommand(
 }
 
 /** execute one native tool call + return its tool-result content. recursive
- *  tools run for real; instant/async tools only get an acknowledgment
- *  ("[accepted: ...]") so every tool_call on the turn has an answer, which
- *  strict providers (anthropic-style validation) require. they are NEVER
- *  scheduled here: the caller already split the same command list (upfront
- *  for the initial turn, per-turn newSplit for follow-ups), so pushing them
- *  here too would execute them twice. */
+ *  tools run for real. instant/async tools never reach this anymore (they run
+ *  before the recursion loop and are answered with real outcome notes); the
+ *  "[accepted: ...]" stub stays only as a defensive fallback so every
+ *  tool_call on the turn always has an answer, which strict providers
+ *  (anthropic-style validation) require. */
 async function executeNativeToolCall(
   call: ToolCallWire,
   opts: {
@@ -150,19 +154,95 @@ export async function processRecursiveCommands(options: ProcessRecursiveOptions)
     commandCtx,
     execCtx,
     initialToolTurn,
+    onAsyncStart,
+    onAsyncEnd,
   } = options;
   const log = deps.log;
   const nativeMode = deps.config.toolcallMode === "native" && !!deps.tools && deps.tools.length > 0;
 
-  const split = splitCommands(registry, commands);
-  let remainingInstant = split.instant.filter((c) => !recursiveNames.includes(c.name));
   let recursiveCmds = commands.filter((c) => recursiveNames.includes(c.name));
-  const isAsyncCall = (c: BotCommand) => registry.get(c.name)?.kind === "async";
-  let pendingAsync = nativeMode ? commands.filter(isAsyncCall) : [];
-  let asyncCommands = [...split.async];
   let reply = initialReply;
-  let replySent = false;
   let currentCommands: BotCommand[] = commands;
+  const isAsyncName = (name: string) => registry.get(name)?.kind === "async";
+
+  // ---- per-turn reply + non-recursive side effects ----
+  let replySent = false;
+  let lastMessageId: string | undefined;
+  const sendTurnReply = async (text: string, cmds: BotCommand[]): Promise<void> => {
+    if (!text || !text.trim()) return;
+    const msgId = replySent ? await ctx.sendFollowUp(text) : await ctx.sendReply(text);
+    replySent = true;
+    if (msgId) {
+      lastMessageId = msgId;
+      metadataStore.record(msgId, channelId, cmds);
+    }
+  };
+
+  const runTurnSideEffects = async (turnCmds: BotCommand[]): Promise<(string | null)[]> => {
+    const notes: (string | null)[] = turnCmds.map(() => null);
+
+    const instantCmds = turnCmds.filter((c) => !isAsyncName(c.name) && !recursiveNames.includes(c.name));
+    if (instantCmds.length > 0) {
+      const results = await executeInstantCommands(registry, log, instantCmds, commandCtx);
+      for (let i = 0; i < instantCmds.length; i++) {
+        const cmd = instantCmds[i]!;
+        const res = results[i];
+        if (!res) continue;
+        if (res.success) log.info(`Command: ${res.message}`);
+        else log.warn(`Command failed: ${res.message}`);
+        notes[turnCmds.indexOf(cmd)] = res.success
+          ? `[${cmd.name}: done]`
+          : `[${cmd.name} failed: ${res.message}]`;
+      }
+    }
+
+    const asyncCmds = turnCmds.filter((c) => isAsyncName(c.name));
+    if (asyncCmds.length > 0) {
+      onAsyncStart?.();
+      try {
+        const results = await executeAsyncCommands(registry, log, asyncCmds, commandCtx);
+        for (let i = 0; i < asyncCmds.length; i++) {
+          const cmd = asyncCmds[i]!;
+          const res = results[i];
+          let note: string;
+          if (!res) {
+            note = `[${cmd.name}: no result returned]`;
+          } else if (res.success && res.attachments && res.attachments.length > 0) {
+            const files = res.attachments.map((a) => new AttachmentBuilder(a.buffer, { name: a.name }));
+            const label = res.mediaType ?? "image";
+            const orient =
+              label === "image" && res.orientation && res.orientation !== "(default)"
+                ? `, ${res.orientation}`
+                : "";
+            const followUpText =
+              deps.config.comfyui.includePromptInMessage && res.prompt
+                ? `${label}: ${res.prompt}${orient}`
+                : "";
+            await ctx.sendFollowUp(followUpText, files);
+            log.info(`Async command: ${res.message}`);
+            const names = res.attachments.map((a) => a.name).slice(0, 3).join(", ");
+            const count = res.attachments.length;
+            note = `[${cmd.name}: done - delivered ${count} ${label}${count === 1 ? "" : "s"}${names ? `: ${names}` : ""}]`;
+          } else if (res.success) {
+            log.info(`Async command: ${res.message}`);
+            note = `[${cmd.name}: done]`;
+          } else {
+            await ctx.sendFollowUp("*[The static interfered with the generation...]*");
+            log.warn(`Async command failed: ${res.message}`);
+            note = `[${cmd.name} failed: ${res.message}]`;
+          }
+          notes[turnCmds.indexOf(cmd)] = note;
+        }
+      } finally {
+        onAsyncEnd?.();
+      }
+    }
+
+    return notes;
+  };
+
+  await sendTurnReply(reply, currentCommands);
+  let turnNotes = await runTurnSideEffects(currentCommands);
 
   // accumulated conversation for this chain: original request + every
   // assistant turn + tool result since. this is the loop-fix: depth N now
@@ -173,33 +253,30 @@ export async function processRecursiveCommands(options: ProcessRecursiveOptions)
   let lastToolTurn: WireMessage | null = initialToolTurn ?? null; // native mode: latest turn as wire data
   const chainTokens = () => chain.reduce((acc, m) => acc + deps.tokens.count(typeof m.content === "string" ? m.content : ""), 0);
 
-  for (
-    let depth = 0;
-    depth < maxRecursionDepth && (recursiveCmds.length > 0 || pendingAsync.length > 0);
-    depth++
-  ) {
-    if (reply && reply.trim()) {
-      const msgId = await ctx.sendReply(reply);
-      replySent = true;
-      metadataStore.record(msgId, channelId, currentCommands);
-    }
-
-    // ---- run this turn's tools + append the exchange to the chain ----
+  for (let depth = 0; depth < maxRecursionDepth && recursiveCmds.length > 0; depth++) {
+    // ---- answer this turn's tool calls in the chain ----
     if (nativeMode && lastToolTurn) {
       const calls = lastToolTurn.tool_calls ?? [];
       chain.push({ role: "assistant", content: lastToolTurn.content ?? "", tool_calls: calls });
-      for (const call of calls) {
-        const result = await executeNativeToolCall(call, {
-          registry,
-          log,
-          recursiveNames,
-          execCtx,
-          botId: execCtx?.botId ?? commandCtx.execCtx.botId,
-          channelId: channelId ?? "",
-          guildId: commandCtx.message?.guild?.id ?? null,
-          messageId: commandCtx.message?.id ?? null,
-          depth,
-        });
+
+      for (let i = 0; i < calls.length; i++) {
+        const call = calls[i]!;
+        let result: string;
+        if (recursiveNames.includes(call.function.name)) {
+          result = await executeNativeToolCall(call, {
+            registry,
+            log,
+            recursiveNames,
+            execCtx,
+            botId: execCtx?.botId ?? commandCtx.execCtx.botId,
+            channelId: channelId ?? "",
+            guildId: commandCtx.message?.guild?.id ?? null,
+            messageId: commandCtx.message?.id ?? null,
+            depth,
+          });
+        } else {
+          result = turnNotes[i] ?? `[${call.function.name}: done]`;
+        }
         chain.push({ role: "tool", tool_call_id: call.id, content: result });
         resultIdxs.push(chain.length - 1);
       }
@@ -229,8 +306,10 @@ export async function processRecursiveCommands(options: ProcessRecursiveOptions)
         }
       }
 
+      const sideNotes = turnNotes.filter((n): n is string => !!n);
+      const parts = sideNotes.length > 0 ? [...toolResultParts, ...sideNotes] : toolResultParts;
       chain.push({ role: "assistant", content: lastRawResponse });
-      chain.push({ role: "user", content: toolResultParts.join("\n\n---\n\n") });
+      chain.push({ role: "user", content: parts.join("\n\n---\n\n") });
       resultIdxs.push(chain.length - 1);
     }
 
@@ -285,26 +364,21 @@ export async function processRecursiveCommands(options: ProcessRecursiveOptions)
         newCommands = parsed.commands ?? [];
       }
 
-      const newSplit = splitCommands(registry, newCommands);
-      remainingInstant.push(...newSplit.instant.filter((c) => !recursiveNames.includes(c.name)));
-      asyncCommands.push(...newSplit.async);
       recursiveCmds = newCommands.filter((c) => recursiveNames.includes(c.name));
-      pendingAsync = nativeMode ? newCommands.filter(isAsyncCall) : [];
       currentCommands = newCommands;
     } catch (error) {
       log.error(`Follow-up LLM call failed (depth ${depth + 1}):`, error);
       break;
     }
+
+    await sendTurnReply(reply, currentCommands);
+    turnNotes = await runTurnSideEffects(currentCommands);
   }
 
   if (recursiveCmds.length > 0)
     log.warn(
       `Max recursion depth (${maxRecursionDepth}) reached. ignoring ${recursiveCmds.length} remaining command(s): ${recursiveCmds.map((c) => c.name).join(", ")}`,
     );
-  if (pendingAsync.length > 0)
-    log.info(
-      `Max recursion depth (${maxRecursionDepth}) reached with ${pendingAsync.length} queued async tool call(s): ${pendingAsync.map((c) => c.name).join(", ")}. They still run after the reply; the model just does not get another turn.`,
-    );
 
-  return { reply, remainingInstant, asyncCommands, finalCommands: currentCommands, replySent };
+  return { lastMessageId };
 }

@@ -17,16 +17,6 @@ export type CommandContext = {
   execCtx: CommandExecutionContext;
 };
 
-export function splitCommands(registry: CommandRegistry, commands: BotCommand[]) {
-  const asyncNames = new Set(
-    registry.list().filter((c) => c.kind === "async").map((c) => c.name),
-  );
-  return {
-    instant: commands.filter((c) => !asyncNames.has(c.name)),
-    async: commands.filter((c) => asyncNames.has(c.name)),
-  };
-}
-
 export async function executeInstantCommands(
   registry: CommandRegistry,
   log: Logger,

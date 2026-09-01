@@ -1,12 +1,13 @@
 // unified response pipeline. all entry points (chat message, /ask, ask context
-// menu) funnel through here.
-//   parse response -> recursive commands -> instant commands -> send reply ->
-//   async commands -> record metadata
+// menu) funnel through here. per model turn the visible order is:
+//   send reply -> instant commands -> async commands (awaited, files
+//   delivered) -> recursive tools -> re-prompt, up to maxRecursionDepth.
+// only recursive tools cause follow-up LLM rounds.
 
-import { AttachmentBuilder, Message } from "discord.js";
+import { Message } from "discord.js";
 import { parseAIResponse } from "./responseParser";
 import { processRecursiveCommands } from "./recursiveCommandHandler";
-import { executeInstantCommands, executeAsyncCommands, type CommandContext } from "./botCommandHandler";
+import type { CommandContext } from "./botCommandHandler";
 import type { ResponseContext } from "./ResponseContexts";
 import type { CommandRegistry, CommandExecutionContext } from "../commands";
 import type { PromptDeps } from "../prompt";
@@ -71,13 +72,7 @@ export async function runResponsePipeline(opts: ResponsePipelineOptions): Promis
 
   const commandCtx: CommandContext = { message, character, execCtx };
 
-  const {
-    reply,
-    remainingInstant,
-    asyncCommands,
-    finalCommands,
-    replySent,
-  } = await processRecursiveCommands({
+  const { lastMessageId } = await processRecursiveCommands({
     deps,
     registry,
     metadataStore,
@@ -95,53 +90,11 @@ export async function runResponsePipeline(opts: ResponsePipelineOptions): Promis
     commandCtx,
     execCtx,
     initialToolTurn,
+    onAsyncStart,
+    onAsyncEnd,
   });
 
-  if (remainingInstant.length > 0) {
-    const instantResults = await executeInstantCommands(registry, log, remainingInstant, commandCtx);
-    for (const result of instantResults) {
-      if (result.success) log.info(`Command: ${result.message}`);
-      else log.warn(`Command failed: ${result.message}`);
-    }
-  }
-
-  let finalMsgId: string | undefined;
-  if (reply && reply.trim()) {
-    finalMsgId = replySent ? await ctx.sendFollowUp(reply) : await ctx.sendReply(reply);
-    metadataStore.record(finalMsgId, channelId, finalCommands);
-  }
-
-  if (asyncCommands.length > 0) {
-    onAsyncStart?.();
-    try {
-      const asyncResults = await executeAsyncCommands(registry, log, asyncCommands, commandCtx);
-      for (const result of asyncResults) {
-        if (result.success && result.attachments && result.attachments.length > 0) {
-          const files = result.attachments.map((a) => new AttachmentBuilder(a.buffer, { name: a.name }));
-          const label = result.mediaType ?? "image";
-          const orient =
-            label === "image" && result.orientation && result.orientation !== "(default)"
-              ? `, ${result.orientation}`
-              : "";
-          const followUpText =
-            deps.config.comfyui.includePromptInMessage && result.prompt
-              ? `${label}: ${result.prompt}${orient}`
-              : "";
-          await ctx.sendFollowUp(followUpText, files);
-          log.info(`Async command: ${result.message}`);
-        } else if (result.success) {
-          log.info(`Async command: ${result.message}`);
-        } else {
-          await ctx.sendFollowUp("*[The static interfered with the generation...]*");
-          log.warn(`Async command failed: ${result.message}`);
-        }
-      }
-    } finally {
-      onAsyncEnd?.();
-    }
-  }
-
-  return finalMsgId;
+  return lastMessageId;
 }
 
 export type { ChatMemoryBook };
