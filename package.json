@@ -1,6 +1,6 @@
 {
   "name": "nyxal",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Nyxal — dashboard + multi-bot runtime for character-driven Discord LLM bots",
   "type": "module",
   "private": true,
