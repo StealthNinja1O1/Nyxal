@@ -40,7 +40,7 @@ export async function executeInstantCommands(
       const reason = !def
         ? `Unknown command: ${cmd.name}`
         : `${cmd.name} should be handled by the recursion loop (max depth reached or not enabled)`;
-      // log the dispatch failure so it shows up in tool_call_log too. 
+      // log the dispatch failure so it shows up in tool_call_log too.
       await logToolCall(
         cmd.name,
         "instant",
@@ -50,6 +50,7 @@ export async function executeInstantCommands(
           channelId: context.message?.channelId ?? null,
           guildId: context.message?.guild?.id ?? null,
           messageId: context.message?.id ?? null,
+          log,
         },
         async () => {
           throw new Error(reason);
@@ -68,6 +69,7 @@ export async function executeInstantCommands(
           channelId: context.message?.channelId ?? null,
           guildId: context.message?.guild?.id ?? null,
           messageId: context.message?.id ?? null,
+          log,
         },
         () => def.execute(cmd.args as Record<string, unknown>, context.execCtx) as Promise<CommandResult>,
       );
@@ -102,6 +104,7 @@ export async function executeAsyncCommands(
           channelId: context.message?.channelId ?? null,
           guildId: context.message?.guild?.id ?? null,
           messageId: context.message?.id ?? null,
+          log,
         },
         async () => {
           throw new Error(reason);
@@ -120,6 +123,7 @@ export async function executeAsyncCommands(
           channelId: context.message?.channelId ?? null,
           guildId: context.message?.guild?.id ?? null,
           messageId: context.message?.id ?? null,
+          log,
         },
         () => def.execute(cmd.args as Record<string, unknown>, context.execCtx) as Promise<AsyncCommandResult>,
       );

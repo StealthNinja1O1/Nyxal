@@ -7,6 +7,7 @@
 
 import { db } from "../db";
 import { toolCallLog } from "../db/schema";
+import type { Logger } from "./utils/logger";
 
 export interface ToolCallContext {
   botId: string;
@@ -14,6 +15,17 @@ export interface ToolCallContext {
   guildId?: string | null;
   messageId?: string | null;
   depth?: number;
+  log?: Logger;
+}
+
+function argsPreview(args: Record<string, unknown>): string {
+  let json: string;
+  try {
+    json = JSON.stringify(args) ?? "{}";
+  } catch {
+    json = "(unserializable args)";
+  }
+  return json.length > 200 ? `${json.slice(0, 200)}…` : json;
 }
 
 /**
@@ -32,6 +44,9 @@ export async function logToolCall<T>(
   const ms0 = performance.now();
   let success = true;
   let errorMessage: string | undefined;
+  ctx.log?.info(
+    `Tool call: ${name} (${kind}${ctx.depth ? `, depth ${ctx.depth}` : ""}): ${argsPreview(args)}`,
+  );
   try {
     const result = await fn();
     if (
@@ -51,6 +66,7 @@ export async function logToolCall<T>(
     throw err;
   } finally {
     const ms = Math.round(performance.now() - ms0);
+    ctx.log?.debug(`Tool call: ${name} finished in ${ms}ms${success ? "" : ` (FAILED: ${errorMessage})`}`);
     // fire-and-forget. id auto-increments.
     void db
       .insert(toolCallLog)

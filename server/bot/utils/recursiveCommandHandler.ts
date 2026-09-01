@@ -68,7 +68,7 @@ async function executeRecursiveCommand(
 ): Promise<string> {
   const def = registry.get(cmd.name);
   if (!def || def.kind !== "recursive") throw new Error(`Unknown recursive command: ${cmd.name}`);
-  log.info(`${cmd.name}: ${JSON.stringify(cmd.args).slice(0, 120)}`);
+  // start/end logging happens in logToolCall, which wraps every call site
   const result = await def.execute(cmd.args as Record<string, unknown>, execCtx ?? ({} as CommandExecutionContext));
   if (typeof result !== "string") throw new Error(`Recursive command ${cmd.name} returned non-string result`);
   return result;
@@ -120,6 +120,7 @@ async function executeNativeToolCall(
         guildId: opts.guildId,
         messageId: opts.messageId,
         depth: opts.depth,
+        log: opts.log,
       },
       () => executeRecursiveCommand(opts.registry, opts.log, cmd, opts.execCtx),
     );
@@ -156,6 +157,8 @@ export async function processRecursiveCommands(options: ProcessRecursiveOptions)
   const split = splitCommands(registry, commands);
   let remainingInstant = split.instant.filter((c) => !recursiveNames.includes(c.name));
   let recursiveCmds = commands.filter((c) => recursiveNames.includes(c.name));
+  const isAsyncCall = (c: BotCommand) => registry.get(c.name)?.kind === "async";
+  let pendingAsync = nativeMode ? commands.filter(isAsyncCall) : [];
   let asyncCommands = [...split.async];
   let reply = initialReply;
   let replySent = false;
@@ -170,7 +173,11 @@ export async function processRecursiveCommands(options: ProcessRecursiveOptions)
   let lastToolTurn: WireMessage | null = initialToolTurn ?? null; // native mode: latest turn as wire data
   const chainTokens = () => chain.reduce((acc, m) => acc + deps.tokens.count(typeof m.content === "string" ? m.content : ""), 0);
 
-  for (let depth = 0; depth < maxRecursionDepth && recursiveCmds.length > 0; depth++) {
+  for (
+    let depth = 0;
+    depth < maxRecursionDepth && (recursiveCmds.length > 0 || pendingAsync.length > 0);
+    depth++
+  ) {
     if (reply && reply.trim()) {
       const msgId = await ctx.sendReply(reply);
       replySent = true;
@@ -210,6 +217,7 @@ export async function processRecursiveCommands(options: ProcessRecursiveOptions)
               guildId: commandCtx.message?.guild?.id ?? null,
               messageId: commandCtx.message?.id ?? null,
               depth,
+              log,
             },
             () => executeRecursiveCommand(registry, log, cmd, execCtx),
           );
@@ -281,6 +289,7 @@ export async function processRecursiveCommands(options: ProcessRecursiveOptions)
       remainingInstant.push(...newSplit.instant.filter((c) => !recursiveNames.includes(c.name)));
       asyncCommands.push(...newSplit.async);
       recursiveCmds = newCommands.filter((c) => recursiveNames.includes(c.name));
+      pendingAsync = nativeMode ? newCommands.filter(isAsyncCall) : [];
       currentCommands = newCommands;
     } catch (error) {
       log.error(`Follow-up LLM call failed (depth ${depth + 1}):`, error);
@@ -291,6 +300,10 @@ export async function processRecursiveCommands(options: ProcessRecursiveOptions)
   if (recursiveCmds.length > 0)
     log.warn(
       `Max recursion depth (${maxRecursionDepth}) reached. ignoring ${recursiveCmds.length} remaining command(s): ${recursiveCmds.map((c) => c.name).join(", ")}`,
+    );
+  if (pendingAsync.length > 0)
+    log.info(
+      `Max recursion depth (${maxRecursionDepth}) reached with ${pendingAsync.length} queued async tool call(s): ${pendingAsync.map((c) => c.name).join(", ")}. They still run after the reply; the model just does not get another turn.`,
     );
 
   return { reply, remainingInstant, asyncCommands, finalCommands: currentCommands, replySent };

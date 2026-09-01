@@ -17,15 +17,26 @@ export interface McpToolDef {
 }
 
 const CLIENT_INFO = { name: "nyxal", version: "0.0.1" };
+const CONNECT_COOLDOWN_MS = 30_000;
+
+async function noSseFetch(input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (method === "GET") 
+    return new Response(null, { status: 405, statusText: "Method Not Allowed" });
+  
+  return fetch(input, init);
+}
 
 class McpRegistry {
   private clients = new Map<string, Client>();
+  private connectErrors = new Map<string, { at: number; message: string }>();
 
   private async connect(server: McpServerRef): Promise<Client> {
     let transport: StreamableHTTPClientTransport;
     try {
       transport = new StreamableHTTPClientTransport(new URL(server.url), {
         requestInit: { headers: server.headers },
+        fetch: noSseFetch,
       });
     } catch (err) {
       throw new Error(
@@ -33,6 +44,9 @@ class McpRegistry {
       );
     }
     const client = new Client(CLIENT_INFO, { capabilities: {} });
+    client.onerror = (err) => {
+      console.error(`[mcp] transport error (${server.name}):`, err instanceof Error ? err.message : err);
+    };
     await client.connect(transport);
     return client;
   }
@@ -40,9 +54,25 @@ class McpRegistry {
   async getOrConnect(server: McpServerRef): Promise<Client> {
     const cached = this.clients.get(server.id);
     if (cached) return cached;
-    const client = await this.connect(server);
-    this.clients.set(server.id, client);
-    return client;
+
+    const failed = this.connectErrors.get(server.id);
+    if (failed && Date.now() - failed.at < CONNECT_COOLDOWN_MS) 
+      throw new Error(
+        `MCP connect for "${server.name}" failed ${Math.round((Date.now() - failed.at) / 1000)}s ago and is on cooldown: ${failed.message}`,
+      );
+    
+    try {
+      const client = await this.connect(server);
+      this.clients.set(server.id, client);
+      this.connectErrors.delete(server.id);
+      return client;
+    } catch (err) {
+      this.connectErrors.set(server.id, {
+        at: Date.now(),
+        message: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
   }
 
   /** List tools, throwing on connect failure. caller decides how to surface. */
@@ -71,7 +101,7 @@ class McpRegistry {
     }
     let result;
     try {
-      result = await client.callTool({ name, arguments: args });
+      result = await client.callTool({ name, arguments: args }, undefined, { timeout: 10 * 60_000 });
     } catch (err) {
       // drop the client
       await client.close().catch(() => {});
@@ -116,9 +146,13 @@ class McpRegistry {
   /** Drop a cached client (used after a server row changes or is deleted). */
   async disconnect(serverId: string): Promise<void> {
     const client = this.clients.get(serverId);
-    if (!client) return;
+    if (!client) {
+      this.connectErrors.delete(serverId); // manual action always gets a fresh attempt
+      return;
+    }
     await client.close().catch(() => {});
     this.clients.delete(serverId);
+    this.connectErrors.delete(serverId);
   }
 
   /** Drop all cached clients. used on shutdown. */
