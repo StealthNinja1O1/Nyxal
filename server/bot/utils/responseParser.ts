@@ -55,6 +55,8 @@ function extractJsonObject(text: string): string | null {
 }
 
 export function parseAIResponse(log: Logger, rawResponse: string): ParsedAIResponse {
+  if (!rawResponse || !rawResponse.trim()) return { reply: "", commands: null, success: true, raw: rawResponse };
+
   let reply = rawResponse;
   let commands: any[] | null = null;
   let success = false;
