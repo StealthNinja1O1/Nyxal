@@ -33,7 +33,6 @@ export async function describeImage(
       model: config.visionModel,
       messages: [{ role: "user", content }],
       temperature: 0.3,
-      max_tokens: 1024,
     }),
   });
 
