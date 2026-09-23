@@ -24,7 +24,7 @@ import { logToolCall } from "../toolCallLogger";
 // exceeds it, the OLDEST tool results get compressed to head+tail excerpts so
 // structure stays visible (which tool, roughly what came back) but bulk text
 // goes. newest results are always kept intact.
-const TOOL_CHAIN_TOKEN_BUDGET = 10000;
+const TOOL_CHAIN_TOKEN_BUDGET = 100_000;
 
 // compress a tool result to head+tail excerpts with an omission marker.
 // idempotent: an already-compressed result is short enough to pass through.
@@ -251,7 +251,12 @@ export async function processRecursiveCommands(options: ProcessRecursiveOptions)
   const resultIdxs: number[] = []; // chain indices of tool result messages, oldest first
   let lastRawResponse = initialResponse; // json mode: raw response (incl. its commands) of the latest turn
   let lastToolTurn: WireMessage | null = initialToolTurn ?? null; // native mode: latest turn as wire data
-  const chainTokens = () => chain.reduce((acc, m) => acc + deps.tokens.count(typeof m.content === "string" ? m.content : ""), 0);
+  // token count of tool results only, never the baseline llmMessages context.
+  const resultTokens = () =>
+    resultIdxs.reduce((acc, idx) => {
+      const m = chain[idx]!;
+      return acc + deps.tokens.count(typeof m.content === "string" ? m.content : "");
+    }, 0);
 
   for (let depth = 0; depth < maxRecursionDepth && recursiveCmds.length > 0; depth++) {
     // ---- answer this turn's tool calls in the chain ----
@@ -314,9 +319,9 @@ export async function processRecursiveCommands(options: ProcessRecursiveOptions)
     }
 
     // stay inside budget: compress oldest tool results first, newest last.
-    if (chainTokens() > TOOL_CHAIN_TOKEN_BUDGET) {
+    if (resultTokens() > TOOL_CHAIN_TOKEN_BUDGET) {
       for (const idx of resultIdxs) {
-        if (chainTokens() <= TOOL_CHAIN_TOKEN_BUDGET) break;
+        if (resultTokens() <= TOOL_CHAIN_TOKEN_BUDGET) break;
         const m = chain[idx]!;
         if (typeof m.content === "string") m.content = compressResult(m.content);
       }
