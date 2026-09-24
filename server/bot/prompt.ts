@@ -4,10 +4,7 @@ import type { LlmCreds } from "./api/llm";
 import { generateResponse, generateToolResponse } from "./api/llm";
 import type { NativeToolDef, ToolCallWire, WireMessage } from "./api/llm";
 import { describeImages, formatImageDescriptions } from "./api/vision";
-import {
-  fetchMessageHistory,
-  formatMessagesForAI,
-} from "./history";
+import { fetchMessageHistory, formatMessagesForAI } from "./history";
 import { processLorebook } from "./lorebook/lorebook";
 import { parseLorebook } from "./lorebook/normalizeLorebook";
 import { loadSummaryState, loadSummaries, snowflakeLte } from "./stores/summaryStore";
@@ -276,6 +273,7 @@ export async function buildAIRequest(
   // depth_prompt insertion (count back, treating consecutive assistant turns as one)
   if (character.depthPrompt && character.depthPrompt.depth >= 0) {
     const depth = character.depthPrompt.depth;
+    const injectable = (m: WireMessage) => m.role === "user" || m.role === "system";
     let depthCount = 0;
     let targetIndex = -1;
     let lastRole: string | null = null;
@@ -283,15 +281,20 @@ export async function buildAIRequest(
       const currentRole = aiMessages[i]!.role;
       if (currentRole === "user" || (currentRole === "assistant" && lastRole !== "assistant")) {
         if (depthCount === depth) {
-          targetIndex = i;
+          if (injectable(aiMessages[i]!)) targetIndex = i;
+          else
+            for (let j = i; j > 0; j--)
+              if (injectable(aiMessages[j]!)) {
+                targetIndex = j;
+                break;
+              }
           break;
         }
         depthCount++;
       }
       lastRole = currentRole;
     }
-    if (targetIndex <= 0) aiMessages[0]!.content += "\n" + character.depthPrompt.prompt;
-    else aiMessages[targetIndex]!.content += "\n" + character.depthPrompt.prompt;
+    aiMessages[targetIndex > 0 ? targetIndex : 0]!.content += "\n" + character.depthPrompt.prompt;
   }
 
   // conversation summaries injected into system message
@@ -317,27 +320,23 @@ export async function buildAIRequest(
   // to know what's there). static entries are always read-only.
   if (chatMemoryBook && chatMemoryBook.entries.length > 0) {
     lorebookEntries += "Editable memory entries (you can modify these with editOrAddToLorebook):\n";
-    for (const entry of chatMemoryBook.entries)
-      lorebookEntries += `Entry name: ${entry.name || "Unnamed entry"};\n`;
+    for (const entry of chatMemoryBook.entries) lorebookEntries += `Entry name: ${entry.name || "Unnamed entry"};\n`;
   } else {
     lorebookEntries += "No editable memory entries yet. You can create them with editOrAddToLorebook.\n";
   }
   if (staticBook?.entries && staticBook.entries.length > 0) {
     lorebookEntries += "\nStatic lore entries (read-only, do NOT try to edit these):\n";
-    for (const entry of staticBook.entries)
-      lorebookEntries += `Entry name: ${entry.name || "Unnamed entry"};\n`;
+    for (const entry of staticBook.entries) lorebookEntries += `Entry name: ${entry.name || "Unnamed entry"};\n`;
   }
 
-  const mergedEntries: CharacterBookEntry[] = [
-    ...(staticBook?.entries || []),
-    ...(chatMemoryBook?.entries || []),
-  ];
+  const mergedEntries: CharacterBookEntry[] = [...(staticBook?.entries || []), ...(chatMemoryBook?.entries || [])];
 
   if (mergedEntries.length > 0) {
     const mergedBook: CharacterBook = {
       name: staticBook?.name || "Lorebook",
       description: "",
-      scan_depth: (staticBook as any)?.scanDepth ?? staticBook?.scan_depth ?? character.character_book?.scan_depth ?? 12,
+      scan_depth:
+        (staticBook as any)?.scanDepth ?? staticBook?.scan_depth ?? character.character_book?.scan_depth ?? 12,
       token_budget: (staticBook as any)?.tokenBudget ?? staticBook?.token_budget ?? 1024,
       recursive_scanning: (staticBook as any)?.recursiveScanning ?? false,
       extensions: {},
@@ -475,9 +474,7 @@ export async function generateAIResponse(
       // the watermark cuts the verbatim window regardless of summary.enabled:
       // a manual /resetcontext must work with summarization off too
       if (watermark) {
-        windowMessages = allMessages.filter(
-          (m) => !m.id || !snowflakeLte(m.id, watermark),
-        );
+        windowMessages = allMessages.filter((m) => !m.id || !snowflakeLte(m.id, watermark));
       }
       // recap injection only when summaries are enabled
       if (config.summary.enabled) opts_summaries = summaries.map((s) => s.content);
@@ -572,7 +569,16 @@ export async function generateAIResponse(
       };
     }
 
-    const response = await generateResponse(creds, log, model, messages, temperature, config.addNothink, finalImages, "chat");
+    const response = await generateResponse(
+      creds,
+      log,
+      model,
+      messages,
+      temperature,
+      config.addNothink,
+      finalImages,
+      "chat",
+    );
     return {
       response,
       messages,
