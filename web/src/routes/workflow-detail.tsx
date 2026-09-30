@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useRoute, Link } from "wouter";
-import { ArrowLeft, Save, AlertCircle, CheckCircle2, Upload, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowLeft, Save, AlertCircle, CheckCircle2, Upload, Download, ChevronDown, ChevronRight } from "lucide-react";
 import { workflowsApi } from "../api/workflows";
 import type { ComfyWorkflow, ComfyWorkflowNode } from "@shared/types";
 import { Button } from "../components/Button";
@@ -308,6 +308,17 @@ export function WorkflowDetailRoute() {
     setSavingContent(false);
   }
 
+  // downloads the editor's current state, unsaved edits included
+  function exportJson() {
+    const blob = new Blob([JSON.stringify(content, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(name.trim() || "workflow").replace(/[^\w.-]+/g, "_")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const uploadRef = useRef<HTMLInputElement>(null);
   async function onUploadJson(e: Event) {
     const input = e.target as HTMLInputElement;
@@ -396,6 +407,9 @@ export function WorkflowDetailRoute() {
             />
             <Button variant="subtle" size="sm" onClick={() => uploadRef.current?.click()}>
               <Upload size={14} /> Upload JSON
+            </Button>
+            <Button variant="subtle" size="sm" onClick={exportJson}>
+              <Download size={14} /> Export JSON
             </Button>
             <Button onClick={saveContent} loading={savingContent} disabled={savingContent}>
               <Save size={14} /> Save nodes

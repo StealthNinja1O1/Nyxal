@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { Bot as BotIcon, Plus, Play, Square, RefreshCw, Pencil, Trash2, Info, ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { Bot as BotIcon, Plus, Play, Square, RefreshCw, Pencil, Copy, Trash2, Info, ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
   bots,
@@ -7,6 +7,7 @@ import {
   loadBots,
   createBot,
   deleteBot,
+  duplicateBot,
   startBot,
   stopBot,
   restartBot,
@@ -163,6 +164,7 @@ function SortableTh({
 
 function BotRow({ bot, providerName }: { bot: Bot; providerName: string }) {
   const [confirmDel, setConfirmDel] = useState(false);
+  const [confirmDup, setConfirmDup] = useState(false);
   const running = bot.status === "online" || bot.status === "starting";
   const [, navigate] = useLocation();
 
@@ -225,6 +227,9 @@ function BotRow({ bot, providerName }: { bot: Bot; providerName: string }) {
             <Link href={`/bots/${bot.id}`} class="row-action-btn" title="Edit">
               <Pencil size={14} />
             </Link>
+            <button class="row-action-btn" title="Duplicate" onClick={(e) => { stopNav(e); setConfirmDup(true); }}>
+              <Copy size={14} />
+            </button>
             <button class="row-action-btn danger" title="Delete" onClick={(e) => { stopNav(e); setConfirmDel(true); }}>
               <Trash2 size={14} />
             </button>
@@ -257,6 +262,39 @@ function BotRow({ bot, providerName }: { bot: Bot; providerName: string }) {
           <p>
             This stops the bot if it's running and deletes its config, character, memory, and metadata.
             Cannot be undone.
+          </p>
+        </Modal>
+      )}
+
+      {confirmDup && (
+        <Modal
+          open
+          title={`Duplicate "${bot.name}"?`}
+          onClose={() => setConfirmDup(false)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setConfirmDup(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  const copy = await duplicateBot(bot.id);
+                  if (copy) {
+                    setConfirmDup(false);
+                    navigate(`/bots/${copy.id}`);
+                  }
+                }}
+              >
+                <Copy size={15} />
+                Duplicate
+              </Button>
+            </>
+          }
+        >
+          <p>
+            Full copy: config, token, channels, character, lorebook, memories and summaries. The copy
+            starts disabled and never answers commands (the original keeps them). Point it at its own
+            channels before starting — on a shared token, overlapping channels make both bots reply.
           </p>
         </Modal>
       )}

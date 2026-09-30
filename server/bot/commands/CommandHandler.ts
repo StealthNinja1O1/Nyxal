@@ -60,6 +60,9 @@ export class CommandHandler {
   }
 
   async registerCommands(applicationId: string): Promise<void> {
+    // bots sharing a token must not all PUT the global command list,
+    // or "Ask <char>" flaps between characters. only the command owner registers.
+    if (!this.bot.getConfig().respondsToCommands) return;
     await this.commandManager.registerCommands(applicationId, this.bot.getCharacter().name);
   }
 

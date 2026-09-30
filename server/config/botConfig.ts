@@ -42,6 +42,7 @@ export interface BotRuntimeConfig {
   maxContextTokens: number;
   ignoreOtherBots: boolean;
   replyToMentions: boolean;
+  respondsToCommands: boolean;
   addTimestamps: boolean;
   addNothink: boolean;
   toolcallMode: ToolcallMode;

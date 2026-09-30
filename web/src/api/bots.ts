@@ -12,6 +12,7 @@ export const botsApi = {
   list: () => http.get<Bot[]>("/bots"),
   get: (id: string) => http.get<Bot>(`/bots/${id}`),
   create: (input: BotCreateInput) => http.post<Bot>("/bots", input),
+  duplicate: (id: string) => http.post<Bot>(`/bots/${id}/duplicate`),
   update: (id: string, patch: BotPatch) => http.patch<PatchResult>(`/bots/${id}`, patch),
   remove: (id: string) => http.del<{ ok: true }>(`/bots/${id}`),
   start: (id: string) => http.post<{ ok: boolean; status: string }>(`/bots/${id}/start`),

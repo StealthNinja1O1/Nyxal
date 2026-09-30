@@ -11,7 +11,7 @@
 
 import { Elysia, t } from "elysia";
 import { db } from "../../db";
-import { bots, characters, mcpServers, mcpTools } from "../../db/schema";
+import { bots, characters, mcpServers, mcpTools, staticLorebookEntries, memoryEntries, commandMetadata, chatSummaries, chatSummaryState } from "../../db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { botManager } from "../../bot/BotManager";
 import { newBotDefaults, ensureCharacter, resolveBotConfig, normalizeComfyui } from "../../config/resolveBotConfig";
@@ -53,6 +53,7 @@ function botRowToPublic(row: typeof bots.$inferSelect) {
     maxContextTokens: row.maxContextTokens,
     ignoreOtherBots: row.ignoreOtherBots,
     replyToMentions: row.replyToMentions,
+    respondsToCommands: row.respondsToCommands,
     addTimestamps: row.addTimestamps,
     addNothink: row.addNothink,
     toolcallMode: row.toolcallMode === "json" ? "json" : "native",
@@ -145,7 +146,7 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
         "mentionTriggerAllowedUserIds", "triggerKeywords", "llmProviderId", "llmModel",
         "temperature", "visionProviderId", "visionModel", "enableVision",
         "randomResponseRate", "maxHistoryMessages", "maxContextTokens",
-        "ignoreOtherBots", "replyToMentions", "addTimestamps", "addNothink", "toolcallMode",
+        "ignoreOtherBots", "replyToMentions", "respondsToCommands", "addTimestamps", "addNothink", "toolcallMode",
         "enableUserStatus", "minResponseIntervalSeconds", "maxRecursionDepth", "logLevel",
         "status", "comfyui", "websearch", "summary", "comfyuiWorkflowIds", "comfyuiDefaultWorkflowId",
         "toolOverrides", "mcpServerIds",
@@ -205,6 +206,7 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
         maxContextTokens: t.Optional(t.Integer()),
         ignoreOtherBots: t.Optional(t.Boolean()),
         replyToMentions: t.Optional(t.Boolean()),
+        respondsToCommands: t.Optional(t.Boolean()),
         addTimestamps: t.Optional(t.Boolean()),
         addNothink: t.Optional(t.Boolean()),
         toolcallMode: t.Optional(t.Union([t.Literal("native"), t.Literal("json")])),
@@ -233,6 +235,59 @@ export const botsRoutes = new Elysia({ prefix: "/api/bots" })
     await botManager.delete(params.id);
     await db.delete(bots).where(eq(bots.id, params.id));
     return { ok: true };
+  })
+
+  .post("/:id/duplicate", async ({ params, set }) => {
+    const [src] = await db.select().from(bots).where(eq(bots.id, params.id));
+    if (!src) {
+      set.status = 404;
+      return { error: "Bot not found" };
+    }
+
+    const id = newId();
+    const ts = new Date(nowMs());
+    const { id: _srcId, name, enabled: _enabled, respondsToCommands: _commands, createdAt: _c, updatedAt: _u, ...botRest } = src;
+    await db.insert(bots).values({
+      ...botRest,
+      id,
+      name: `${name} (copy)`,
+      enabled: false,
+      respondsToCommands: false,
+      createdAt: ts,
+      updatedAt: ts,
+    });
+
+    const [char] = await db.select().from(characters).where(eq(characters.botId, src.id));
+    if (char) {
+      const { id: _charId, botId: _charBotId, ...charRest } = char;
+      await db.insert(characters).values({ ...charRest, id: newId(), botId: id, updatedAt: ts });
+    }
+
+    const cloneRows = async (table: any): Promise<void> => {
+      const rows: any[] = await db.select().from(table).where(eq(table.botId, src.id));
+      if (rows.length === 0) return;
+      await db.insert(table).values(
+        rows.map(({ id: _rowId, botId: _rowBotId, ...rest }) => ({
+          ...rest,
+          id: newId(),
+          botId: id,
+          updatedAt: ts,
+        })),
+      );
+    };
+    await cloneRows(staticLorebookEntries);
+    await cloneRows(memoryEntries);
+    await cloneRows(commandMetadata);
+    await cloneRows(chatSummaries);
+
+    const states = await db.select().from(chatSummaryState).where(eq(chatSummaryState.botId, src.id));
+    if (states.length > 0)
+      await db
+        .insert(chatSummaryState)
+        .values(states.map(({ botId: _stateBotId, ...s }) => ({ ...s, botId: id, updatedAt: ts })));
+
+    const [row] = await db.select().from(bots).where(eq(bots.id, id));
+    return botRowToPublic(row!);
   })
 
   .post("/:id/start", async ({ params, set }) => {

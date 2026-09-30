@@ -1,0 +1,1 @@
+ALTER TABLE `bots` ADD `responds_to_commands` integer DEFAULT true NOT NULL;

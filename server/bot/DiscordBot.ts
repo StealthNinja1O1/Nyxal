@@ -1,6 +1,6 @@
 import type { Message } from "discord.js";
 import { ActivityType } from "discord.js";
-import type { PresenceStatusData, Client } from "discord.js";
+import type { Interaction, PresenceStatusData, Client } from "discord.js";
 import type { BotRuntimeConfig } from "../config/botConfig";
 import type { LlmCreds } from "./api/llm";
 import type { RuntimeCharacter, ChatMemoryBook, ImageAttachment } from "./types";
@@ -26,6 +26,7 @@ export interface DiscordBotOptions {
   character: RuntimeCharacter;
   chatMemoryBook: ChatMemoryBook;
   log: Logger;
+  shouldHandleInteraction?: (bot: DiscordBot, interaction: Interaction) => boolean;
 }
 
 export class DiscordBot {
@@ -93,7 +94,10 @@ export class DiscordBot {
       {
         onReady: (id, tag) => this.onReady(id, tag),
         onMessage: (m) => void this.handleMessage(m),
-        onInteraction: (i) => void this.commandHandler.handleInteraction(i),
+        onInteraction: (i) => {
+          if (!opts.shouldHandleInteraction || opts.shouldHandleInteraction(this, i))
+            void this.commandHandler.handleInteraction(i);
+        },
       },
       this.config.enableUserStatus,
     );

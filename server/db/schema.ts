@@ -87,6 +87,8 @@ export const bots = sqliteTable("bots", {
   maxContextTokens: integer("max_context_tokens").notNull().default(20000),
   ignoreOtherBots: integer("ignore_other_bots", { mode: "boolean" }).notNull().default(true),
   replyToMentions: integer("reply_to_mentions", { mode: "boolean" }).notNull().default(true),
+  // when several bots share one token, only these answer commands
+  respondsToCommands: integer("responds_to_commands", { mode: "boolean" }).notNull().default(true),
   addTimestamps: integer("add_timestamps", { mode: "boolean" }).notNull().default(true),
   addNothink: integer("add_nothink", { mode: "boolean" }).notNull().default(false),
   // native api tool calling vs legacy json {reply,commands} format

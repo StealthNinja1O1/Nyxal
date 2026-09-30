@@ -39,6 +39,7 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
   const [toggles, setToggles] = useState({
     ignoreOtherBots: bot.ignoreOtherBots,
     replyToMentions: bot.replyToMentions,
+    respondsToCommands: bot.respondsToCommands,
     addTimestamps: bot.addTimestamps,
     addNothink: bot.addNothink,
     enableUserStatus: bot.enableUserStatus,
@@ -86,6 +87,7 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
       toolcallMode,
       ignoreOtherBots: toggles.ignoreOtherBots,
       replyToMentions: toggles.replyToMentions,
+      respondsToCommands: toggles.respondsToCommands,
       addTimestamps: toggles.addTimestamps,
       addNothink: toggles.addNothink,
       enableUserStatus: toggles.enableUserStatus,
@@ -287,6 +289,12 @@ export function BehaviorTab({ bot }: { bot: Bot }) {
           label="Ignore other bots"
           checked={toggles.ignoreOtherBots}
           onChange={(v) => setT("ignoreOtherBots", v)}
+        />
+        <Toggle
+          label="Handles commands"
+          hint="For bots sharing one Discord token: only these answer /ask and toggles in channels not linked to a single bot, and only they register the slash commands. A channel linked to exactly one bot is always answered by that bot."
+          checked={toggles.respondsToCommands}
+          onChange={(v) => setT("respondsToCommands", v)}
         />
       </div>
 

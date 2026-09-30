@@ -61,6 +61,18 @@ export async function updateBot(
   }
 }
 
+export async function duplicateBot(id: string): Promise<Bot | null> {
+  try {
+    const copy = await botsApi.duplicate(id);
+    bots.value = [...bots.value, copy];
+    toast.show(`Duplicated as "${copy.name}" (disabled, commands stay with the original)`, "success");
+    return copy;
+  } catch (err) {
+    toast.show(`Duplicate failed: ${msg(err)}`, "error");
+    return null;
+  }
+}
+
 export async function deleteBot(id: string): Promise<boolean> {
   try {
     await botsApi.remove(id);

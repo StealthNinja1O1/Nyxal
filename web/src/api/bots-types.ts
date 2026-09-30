@@ -35,6 +35,7 @@ export interface Bot {
   maxContextTokens: number;
   ignoreOtherBots: boolean;
   replyToMentions: boolean;
+  respondsToCommands: boolean;
   addTimestamps: boolean;
   addNothink: boolean;
   toolcallMode: "native" | "json";
@@ -82,6 +83,7 @@ export type BotPatch = Partial<{
   maxContextTokens: number;
   ignoreOtherBots: boolean;
   replyToMentions: boolean;
+  respondsToCommands: boolean;
   addTimestamps: boolean;
   addNothink: boolean;
   toolcallMode: "native" | "json";

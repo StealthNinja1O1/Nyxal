@@ -1,3 +1,4 @@
+import type { Interaction } from "discord.js";
 import { db } from "../db";
 import { bots } from "../db/schema";
 import { eq } from "drizzle-orm";
@@ -24,6 +25,34 @@ export interface BotRuntimeInfo {
 class BotManager {
   private instances = new Map<string, DiscordBot>();
   private statuses = new Map<string, BotRuntimeInfo>();
+  private warnedAmbiguousPrimaries = new Set<string>();
+
+  // several bots may share one Discord token; discord then delivers every
+  // interaction to each of them. exactly one gets to answer: the bot that has
+  // the channel linked, else the deterministic respondsToCommands pick.
+  shouldHandleInteraction(bot: DiscordBot, interaction: Interaction): boolean {
+    const group = [...this.instances.values()].filter(
+      (b) => b.config.botToken === bot.config.botToken,
+    );
+    if (group.length <= 1) return true;
+
+    const channelId = interaction.channelId;
+    if (channelId) {
+      const owners = group.filter((b) => b.config.channelIds.includes(channelId));
+      if (owners.length === 1) return owners[0] === bot;
+    }
+
+    const primaries = group
+      .filter((b) => b.config.respondsToCommands)
+      .sort((a, b) => (a.config.botId < b.config.botId ? -1 : 1));
+    if (primaries.length > 1 && !this.warnedAmbiguousPrimaries.has(bot.config.botToken)) {
+      this.warnedAmbiguousPrimaries.add(bot.config.botToken);
+      systemLog.warn(
+        `Multiple bots with handles-commands enabled share one token; "${primaries[0]!.config.name}" answers commands in unlinked channels`,
+      );
+    }
+    return primaries[0] === bot;
+  }
 
   list(): BotRuntimeInfo[] {
     return [...this.statuses.values()];
@@ -75,8 +104,22 @@ class BotManager {
 
       const logger = createLogger(`bot:${row.name}`, (config.logLevel.toUpperCase() as LogLevel) || "INFO", botId);
 
-      const bot = new DiscordBot({ config, character, chatMemoryBook, log: logger });
+      const bot = new DiscordBot({
+        config,
+        character,
+        chatMemoryBook,
+        log: logger,
+        shouldHandleInteraction: (b, i) => this.shouldHandleInteraction(b, i),
+      });
       this.instances.set(botId, bot);
+
+      const sameToken = [...this.instances.values()].filter(
+        (b) => b !== bot && b.config.botToken === config.botToken,
+      );
+      if (sameToken.length > 0)
+        systemLog.warn(
+          `Bot "${row.name}" shares a Discord token with ${sameToken.map((b) => `"${b.config.name}"`).join(", ")} - keep their channel lists disjoint or both reply to the same messages`,
+        );
 
       await bot.start();
       this.statuses.set(botId, {
